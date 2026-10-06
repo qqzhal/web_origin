@@ -1,0 +1,161 @@
+/* 让特殊按钮更透明 */
+.transp-btn-circle {
+  opacity: 0.35 !important;
+  background: #125ea7 !important;
+
+}
+
+#saveManagerBtn .transp-btn-label {
+  font-size: calc(0.45 * 48px); /* 48px为按钮高度，如有变化请同步调整 */
+  line-height: 48px;
+}
+
+
+/* 推荐放到 gamepad.css 或 <style> 标签中 */
+.controller-dialog {
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 4px 32px #0002;
+  max-width: 340px;
+  min-width: 220px;
+  margin: 0;
+  padding: 0;
+  font-family: "Segoe UI", Arial, sans-serif;
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 9999;
+  display: block;
+  /* 让内容自适应高度 */
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.transp-tab-header {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid #eee;
+  background: #f8f8f8;
+  padding: 0.5em 1em;
+}
+
+.tab-btn {
+  background: none;
+  border: none;
+  font-size: 1em;
+  padding: 0.5em 1em;
+  cursor: pointer;
+  color: #333;
+  border-bottom: 2px solid transparent;
+  margin-right: 0.5em;
+}
+
+.tab-btn.active {
+  color: #1976d2;
+  border-bottom: 2px solid #1976d2;
+  font-weight: bold;
+}
+
+.close-btn {
+  margin-left: auto;
+  background: none;
+  border: none;
+  font-size: 1.5em;
+  color: #888;
+  cursor: pointer;
+}
+
+#controllerContent {
+  padding: 1.2em 1.5em 1em 1.5em;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.ctrl-section {
+  margin-bottom: 1.2em;
+}
+
+.ctrl-title {
+  font-size: 1.1em;
+  color: #1976d2;
+  margin-bottom: 0.5em;
+  font-weight: bold;
+}
+
+.ctrl-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0.5em;
+}
+
+.ctrl-row label {
+  width: 4em;
+  color: #444;
+  font-size: 1em;
+}
+
+.ctrl-row input {
+  flex: 1;
+  padding: 0.3em 0.5em;
+  font-size: 1em;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  outline: none;
+  background: #fafbfc;
+}
+
+.ctrl-actions {
+  display: flex;
+  gap: 0.7em;
+  justify-content: flex-end;
+  margin-top: 1em;
+}
+
+.main-btn {
+  background: #1976d2;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 0.5em 1.2em;
+  font-size: 1em;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.main-btn:hover {
+  background: #125ea7;
+}
+
+    /* transpEditFloatBar 样式 */
+    .transp-float-bar {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 10000;
+      background: rgba(0, 0, 0, 0.8);
+      color: #fff;
+      padding: 10px;
+      border-radius: 8px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: center;
+      font-size: 14px;
+    }
+
+    .transp-float-bar button {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      padding: 8px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    .transp-float-bar button:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }

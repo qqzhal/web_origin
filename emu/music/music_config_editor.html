@@ -1,0 +1,1181 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NSF音乐配置编辑器</title>
+    <style>
+        body {
+            font-family: 'Microsoft YaHei', Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+            color: #333;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: visible; /* 改为visible以允许sticky元素正常工作 */
+        }
+
+        .header {
+            background: #1976D2;
+            color: white;
+            padding: 20px;
+            text-align: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+
+        .header p {
+            margin: 10px 0 0 0;
+            opacity: 0.9;
+        }
+
+        .content {
+            padding: 20px;
+        }
+
+        .toolbar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            position: sticky;
+            top: 88px; /* header高度 */
+            background: white;
+            padding: 15px 0;
+            z-index: 90;
+            border-bottom: 2px solid #e0e0e0;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+        }
+
+        .btn-primary {
+            background: #1976D2;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #1565C0;
+        }
+
+        .btn-secondary {
+            background: #757575;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #616161;
+        }
+
+        .btn-success {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #45a049;
+        }
+
+        .btn-danger {
+            background: #f44336;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #d32f2f;
+        }
+
+        .btn-small {
+            padding: 4px 8px;
+            font-size: 12px;
+        }
+
+        .config-selector {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+            align-items: center;
+            position: sticky;
+            top: 153px; /* header + toolbar高度 */
+            background: white;
+            padding: 15px 0;
+            z-index: 90;
+            border-bottom: 2px solid #e0e0e0;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+
+        .config-selector label {
+            font-weight: bold;
+        }
+
+        .config-selector select {
+            padding: 5px 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .table-container {
+            overflow-x: auto;
+            margin-bottom: 20px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+
+        th {
+            background: #f8f9fa;
+            font-weight: 600;
+            z-index: 50;
+        }
+
+        tr:hover {
+            background: #f5f5f5;
+        }
+
+        .code-cell {
+            font-family: monospace;
+            font-weight: bold;
+            color: #1976D2;
+            width: 60px;
+        }
+
+        .input-cell input, .input-cell select {
+            width: 100%;
+            padding: 6px 8px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            font-size: 14px;
+        }
+
+        .input-cell input:focus, .input-cell select:focus {
+            outline: none;
+            border-color: #1976D2;
+            box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.2);
+        }
+
+        .action-cell {
+            width: 120px;
+            text-align: center;
+        }
+
+        .play-btn {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .play-btn:hover {
+            background: #45a049;
+        }
+
+        .play-btn.playing {
+            background: #f44336;
+        }
+
+        .play-btn.playing:hover {
+            background: #d32f2f;
+        }
+
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+            display: none;
+        }
+
+        .status.success {
+            background: #e8f5e8;
+            border: 1px solid #4caf50;
+            color: #2e7d32;
+        }
+
+        .status.error {
+            background: #ffebee;
+            border: 1px solid #f44336;
+            color: #c62828;
+        }
+
+        .status.info {
+            background: #e3f2fd;
+            border: 1px solid #2196f3;
+            color: #0d47a1;
+        }
+
+        .player-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 10px 0;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            position: sticky;
+            top: 218px; /* header + toolbar + config-selector高度 */
+            z-index: 80;
+            border: 2px solid #e0e0e0;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+
+        .player-controls.hidden {
+            display: none;
+        }
+
+        .player-info {
+            flex: 1;
+            font-weight: bold;
+        }
+
+        .player-buttons {
+            display: flex;
+            gap: 5px;
+        }
+
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .modal.hidden {
+            display: none;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal h3 {
+            margin-top: 0;
+            color: #1976D2;
+        }
+
+        .modal textarea {
+            width: 100%;
+            height: 300px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            resize: vertical;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 15px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #1976D2;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .required {
+            color: #f44336;
+        }
+
+        .help-text {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>NSF音乐配置编辑器</h1>
+            <p>编辑 emu/music/music_config.js 中的音乐映射配置</p>
+        </div>
+
+        <div class="content">
+            <div class="toolbar">
+                <button class="btn btn-secondary" id="exportBtn">下载配置</button>
+                <button class="btn btn-secondary" id="addRowBtn">添加行</button>
+                <button class="btn btn-danger" id="clearBtn">清空配置</button>
+            </div>
+
+            <div class="config-selector">
+                <label>当前编辑配置:</label>
+                <select id="configSelect">
+                    <option value="musicConfig">musicConfig (当前使用)</option>
+                    <option value="musicConfigback">musicConfigback (备份)</option>
+                </select>
+                <div class="help-text">选择要编辑的配置Map</div>
+            </div>
+
+            <div class="player-controls hidden" id="playerControls">
+                <div class="player-info" id="playerInfo">未播放</div>
+                <div class="player-buttons">
+                    <button class="btn btn-small" id="prevTrackBtn">◀</button>
+                    <button class="btn btn-small btn-success" id="playPauseBtn">▶</button>
+                    <button class="btn btn-small" id="nextTrackBtn">▶</button>
+                    <button class="btn btn-small btn-danger" id="stopBtn">⏹</button>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table id="configTable">
+                    <thead>
+                        <tr>
+                            <th style="width: 60px;">代码</th>
+                            <th style="width: 200px;">路径 <span class="required">*</span></th>
+                            <th style="width: 80px;">索引 <span class="required">*</span></th>
+                            <th style="width: 80px;">类型 <span class="required">*</span></th>
+                            <th style="width: 150px;">变量名</th>
+                            <th>备注</th>
+                            <th style="width: 120px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody">
+                        <tr>
+                            <td colspan="7" class="loading">
+                                <div class="spinner"></div>
+                                请选择配置文件开始
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="status" id="status"></div>
+        </div>
+    </div>
+
+    <!-- 尝试自动加载配置文件 -->
+    <script src="music_config.js"></script>
+
+    <script>
+        class MusicConfigEditor {
+            constructor() {
+                this.currentConfig = 'musicConfig';
+                this.configData = {
+                    musicConfig: new Map(),
+                    musicConfigback: new Map()
+                };
+                this.loadedFiles = new Map();
+                this.currentPlayer = null;
+                this.currentPlayingRow = null;
+                this.currentTrackIndex = 0;
+                this.totalTracks = 0;
+
+                // GME UI preview state for editor
+                this.editorGmeAudioContext = null;
+                this.editorGmeUiNode = null;
+                this.editorGmeBufferPtr = null;
+                this.editorGmeDataPtr = null;
+                this.editorPaused = false;
+
+                this.init();
+            }
+
+            init() {
+                this.bindEvents();
+
+                // 检查是否已经自动加载了配置文件
+                if (window.musicConfig || window.musicConfigback) {
+                    this.parseAutoLoadedConfig();
+                    this.showStatus('配置文件已自动加载！', 'success');
+                    this.renderTable();
+                } else {
+                    this.showStatus('请选择配置文件开始编辑', 'info');
+                }
+
+                // 计算并应用 sticky top 的偏移，确保表头位于所有固定元素下方
+                this.computeStickyTop();
+
+                // 在窗口大小变化时重新计算
+                window.addEventListener('resize', () => this.computeStickyTop());
+
+                // 预加载 GME WASM，以避免首次点击播放时未初始化的问题
+                try {
+                    const self = this;
+                    function setGmePtrs() {
+                        try {
+                            if (typeof Module !== 'undefined') {
+                                try { self.editorGmeBufferPtr = Module.ccall('get_buffer', 'number', [], []); } catch (e) {}
+                                try { self.editorGmeDataPtr = Module.ccall('get_data_buffer', 'number', [], []); } catch (e) {}
+                                self.showStatus('GME 模块已初始化', 'info');
+                            }
+                        } catch (e) {
+                            console.warn('setGmePtrs error', e);
+                        }
+                    }
+
+                    if (typeof Module === 'undefined') {
+                        const s = document.createElement('script');
+                        s.src = '../lib/gme_player.js';
+                        s.onload = function() {
+                            // If Module exposes onRuntimeInitialized, chain our ptr setup
+                            if (typeof Module !== 'undefined' && typeof Module.onRuntimeInitialized === 'function') {
+                                const orig = Module.onRuntimeInitialized;
+                                Module.onRuntimeInitialized = function() {
+                                    try { if (typeof orig === 'function') orig(); } catch (e) {}
+                                    setGmePtrs();
+                                };
+                            } else {
+                                setGmePtrs();
+                            }
+                        };
+                        s.onerror = function() {
+                            console.warn('无法加载 GME 模块（编辑器预加载）');
+                        };
+                        document.head.appendChild(s);
+                    } else {
+                        // Module already present
+                        setTimeout(setGmePtrs, 0);
+                    }
+                } catch (e) {
+                    console.warn('预加载 GME 失败', e);
+                }
+            }
+
+            bindEvents() {
+                document.getElementById('exportBtn').addEventListener('click', () => this.downloadConfig());
+                document.getElementById('addRowBtn').addEventListener('click', () => this.addRow());
+                document.getElementById('clearBtn').addEventListener('click', () => this.clearConfig());
+                document.getElementById('configSelect').addEventListener('change', (e) => {
+                    this.currentConfig = e.target.value;
+                    this.renderTable();
+                });
+
+                // 播放器控制
+                document.getElementById('playPauseBtn').addEventListener('click', () => this.togglePlayback());
+                document.getElementById('prevTrackBtn').addEventListener('click', () => this.prevTrack());
+                document.getElementById('nextTrackBtn').addEventListener('click', () => this.nextTrack());
+                document.getElementById('stopBtn').addEventListener('click', () => this.stopPlayback());
+            }
+
+            parseAutoLoadedConfig() {
+                // 直接使用已经加载到window的配置
+                if (window.musicConfig) {
+                    this.configData.musicConfig = this.objectToMap(window.musicConfig);
+                }
+                if (window.musicConfigback) {
+                    this.configData.musicConfigback = this.objectToMap(window.musicConfigback);
+                }
+            }
+
+            objectToMap(obj) {
+                if (obj instanceof Map) {
+                    return new Map(obj);
+                }
+                return new Map(Object.entries(obj || {}));
+            }
+
+            mapToObject(map) {
+                const obj = {};
+                for (const [key, value] of map) {
+                    obj[key] = value;
+                }
+                return obj;
+            }
+
+            renderTable() {
+                const tbody = document.getElementById('tableBody');
+                const config = this.configData[this.currentConfig];
+
+                if (!config || config.size === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 40px; color: #666;">配置为空，请先加载配置或添加行</td></tr>';
+                    return;
+                }
+
+                const rows = [];
+                for (const [code, mapping] of config) {
+                    rows.push(this.createTableRow(code, mapping));
+                }
+
+                tbody.innerHTML = rows.join('');
+            }
+
+            createTableRow(code, mapping) {
+                const path = mapping.path || '';
+                const index = mapping.index !== undefined ? mapping.index : 0;
+                const type = mapping.type || 'bgm';
+                const name = mapping.name || '';
+                const note = mapping.note || '';
+
+                return `
+                    <tr data-code="${code}">
+                        <td class="code-cell">${code}</td>
+                        <td class="input-cell">
+                            <input type="text" value="${this.escapeHtml(path)}" data-field="path" placeholder="music/filename.js">
+                        </td>
+                        <td class="input-cell">
+                            <input type="number" value="${index}" data-field="index" min="0" max="255">
+                        </td>
+                        <td class="input-cell">
+                            <select data-field="type">
+                                <option value="bgm" ${type === 'bgm' ? 'selected' : ''}>bgm</option>
+                                <option value="se" ${type === 'se' ? 'selected' : ''}>se</option>
+                            </select>
+                        </td>
+                        <td class="input-cell">
+                            <input type="text" value="${this.escapeHtml(name)}" data-field="name" placeholder="变量名">
+                        </td>
+                        <td class="input-cell">
+                            <input type="text" value="${this.escapeHtml(note)}" data-field="note" placeholder="备注信息">
+                        </td>
+                        <td class="action-cell">
+                            <button class="play-btn" onclick="editor.playRow('${code}')">试听</button>
+                            <button class="btn btn-danger btn-small" onclick="editor.deleteRow('${code}')">删除</button>
+                        </td>
+                    </tr>
+                `;
+            }
+
+            addRow() {
+                const config = this.configData[this.currentConfig];
+                let newCode = '80'; // 默认起始代码
+
+                // 找到一个未使用的代码
+                while (config.has(newCode)) {
+                    const num = parseInt(newCode, 16) + 1;
+                    newCode = num.toString(16).toUpperCase().padStart(2, '0');
+                }
+
+                config.set(newCode, {
+                    path: '',
+                    index: 0,
+                    type: 'bgm',
+                    name: '',
+                    note: ''
+                });
+
+                this.renderTable();
+                this.showStatus(`已添加新行 (代码: ${newCode})`, 'success');
+            }
+
+            deleteRow(code) {
+                if (confirm(`确定要删除代码 ${code} 的配置吗？`)) {
+                    this.configData[this.currentConfig].delete(code);
+                    this.renderTable();
+                    this.showStatus(`已删除代码 ${code} 的配置`, 'success');
+                }
+            }
+
+            async playRow(code) {
+                const config = this.configData[this.currentConfig];
+                const mapping = config.get(code);
+
+                if (!mapping || !mapping.path) {
+                    this.showStatus('此行没有有效的路径配置', 'error');
+                    return;
+                }
+
+                try {
+                    // 行内按钮行为（重启/停止）：
+                    // - 如果当前正在播放同一行（非 paused），则点击表示停止
+                    // - 否则（包括 paused 或不同的行），停止当前并重新开始播放（重启）
+                    if (this.currentPlayingRow === code) {
+                        if (this.currentPlayer && !this.editorPaused) {
+                            // 正在播放 -> 停止
+                            this.stopPlayback();
+                            return;
+                        } else {
+                            // paused 或没有实际 player -> 继续重启播放（先清理）
+                            this.stopPlayback();
+                            // keep currentPlayingRow as code below
+                        }
+                    } else {
+                        // 不同的行：停止当前并开始新播放
+                        this.stopPlayback();
+                    }
+
+                    this.currentPlayingRow = code;
+                    this.showStatus(`正在加载 ${mapping.path}...`, 'info');
+
+                    // 加载NSF文件
+                    const nsfData = await this.loadNsfFile(mapping.path, mapping.name);
+
+                    // 确定曲目数量：使用 GME 的 init_gme -> get_track_count -> stop_gme 流程来支持多种格式
+                    this.totalTracks = 1;
+                    try {
+                        if (typeof Module !== 'undefined' && typeof Module.ccall === 'function') {
+                            try {
+                                const uint8Data = nsfData instanceof Uint8Array ? nsfData : new Uint8Array(nsfData);
+                                const resizeResult = Module.ccall('resize_data_buffer', 'number', ['number'], [uint8Data.length]);
+                                if (resizeResult === 0) {
+                                    let tmpDataPtr = 0;
+                                    try { tmpDataPtr = Module.ccall('get_data_buffer', 'number', [], []); } catch (e) { tmpDataPtr = 0; }
+                                    if (tmpDataPtr) {
+                                        for (let i = 0; i < uint8Data.length; i++) HEAPU8[tmpDataPtr + i] = uint8Data[i];
+                                        // 初始化 GME（使用 track 0）以便正确解析文件并查询曲目数
+                                        try {
+                                            const initRes = Module.ccall('init_gme', 'number', ['number', 'number', 'number'], [uint8Data.length, 0, (this.editorGmeAudioContext ? this.editorGmeAudioContext.sampleRate : 44100)]);
+                                            if (initRes === 0) {
+                                                try {
+                                                    const tc = Module.ccall('get_track_count', 'number', [], []);
+                                                    if (typeof tc === 'number' && tc > 0) this.totalTracks = tc;
+                                                } catch (e) {
+                                                    console.warn('GME 未提供 get_track_count 接口或调用失败', e);
+                                                }
+                                                // 尝试停止/清理 GME 状态（如果实现了 stop_gme）
+                                                try { Module.ccall('stop_gme', 'number', [], []); } catch (e) {}
+                                            }
+                                        } catch (e) {
+                                            console.warn('init_gme for track count failed', e);
+                                        }
+                                    }
+                                }
+                            } catch (e) {
+                                console.warn('使用 GME 获取曲目数失败:', e);
+                            }
+                        }
+                        // 不使用 JSNSF (NsfPlayer) 回退，全部使用 GME 解析
+                    } catch (e) {
+                        console.warn('确定曲目总数时发生错误:', e);
+                    }
+
+                    this.currentTrackIndex = Math.min(mapping.index || 0, this.totalTracks - 1);
+
+                    // 开始播放
+                    this.playTrack(mapping.path, this.currentTrackIndex, mapping.name);
+
+                    // 更新UI
+                    this.updatePlayerUI(mapping, code);
+
+                } catch (error) {
+                    console.error('播放失败:', error);
+                    this.showStatus(`播放失败: ${error.message}`, 'error');
+                    this.currentPlayingRow = null;
+                }
+            }
+
+            async loadNsfFile(filePath, variableName) {
+                // 修复路径问题：在编辑器环境中，调整NSF文件的相对路径
+                let adjustedPath = filePath;
+                if (filePath.startsWith('music/')) {
+                    // 如果路径以 music/ 开头，在编辑器中移除 music/ 前缀
+                    // 因为编辑器和NSF文件都在同一个 music/ 目录下
+                    adjustedPath = filePath.substring(6);
+                }
+
+                const cacheKey = adjustedPath + (variableName ? '|' + variableName : '');
+
+                if (this.loadedFiles.has(cacheKey)) {
+                    return this.loadedFiles.get(cacheKey);
+                }
+
+                return new Promise((resolve, reject) => {
+                    const script = document.createElement('script');
+                    script.src = adjustedPath + '?t=' + Date.now();
+
+                    script.onload = () => {
+                        let varName = variableName;
+                        if (!varName) {
+                            varName = filePath.split('/').pop().replace(/\.js$/i, '');
+                        } else if (varName.endsWith('.js')) {
+                            varName = varName.replace(/\.js$/i, '');
+                        }
+
+                        const nsfData = window[varName];
+                        if (nsfData && Array.isArray(nsfData)) {
+                            this.loadedFiles.set(cacheKey, nsfData);
+                            resolve(nsfData);
+                        } else {
+                            reject(new Error(`NSF变量 ${varName} 未找到或不是数组`));
+                        }
+                    };
+
+                    script.onerror = () => {
+                        reject(new Error(`加载NSF文件失败: ${adjustedPath}`));
+                    };
+
+                    document.head.appendChild(script);
+                });
+            }
+
+            playTrack(nsfPath, trackIndex, variableName) {
+                // 使用 GME 播放编辑器内的试听，不依赖 nsfPlayBackground
+                // 停止之前的播放
+                this.stopPlayback();
+
+                // 确保 audio context
+                if (!this.editorGmeAudioContext) this.editorGmeAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+                // path 调整
+                let adjustedPath = nsfPath;
+                if (nsfPath.startsWith('music/')) adjustedPath = nsfPath.substring(6);
+                const cacheKey = adjustedPath + (variableName ? '|' + variableName : '');
+                const nsfData = this.loadedFiles.get(cacheKey);
+                if (!nsfData) throw new Error('NSF数据未加载');
+
+                const uint8Data = nsfData instanceof Uint8Array ? nsfData : new Uint8Array(nsfData);
+
+                const playNow = () => {
+                    try {
+                        if (typeof Module === 'undefined') {
+                            throw new Error('GME Module 未加载');
+                        }
+                        // resize and copy
+                        const resizeResult = Module.ccall('resize_data_buffer', 'number', ['number'], [uint8Data.length]);
+                        if (resizeResult !== 0) throw new Error('resize_data_buffer 失败');
+                        try { this.editorGmeDataPtr = Module.ccall('get_data_buffer', 'number', [], []); } catch (e) {}
+                        try { this.editorGmeBufferPtr = Module.ccall('get_buffer', 'number', [], []); } catch (e) {}
+                        for (let i = 0; i < uint8Data.length; i++) HEAPU8[this.editorGmeDataPtr + i] = uint8Data[i];
+
+                        const result = Module.ccall('init_gme', 'number', ['number', 'number', 'number'], [uint8Data.length, trackIndex || 0, this.editorGmeAudioContext.sampleRate]);
+                        if (result !== 0) throw new Error('init_gme 失败');
+
+                        // create script node
+                        try {
+                            if (this.editorGmeUiNode) { try { this.editorGmeUiNode.disconnect(); } catch (e) {} this.editorGmeUiNode = null; }
+                            const bufferSize = 4096;
+                            // 如果 audioContext 曾被 suspend，尝试恢复
+                            try {
+                                if (this.editorGmeAudioContext && this.editorGmeAudioContext.state === 'suspended' && typeof this.editorGmeAudioContext.resume === 'function') {
+                                    this.editorGmeAudioContext.resume().catch(()=>{});
+                                }
+                            } catch (e) {
+                                // 忽略恢复错误
+                            }
+                            this.editorGmeUiNode = this.editorGmeAudioContext.createScriptProcessor(bufferSize, 0, 2);
+                            // Ensure buffer ptr is available
+                            try { this.editorGmeBufferPtr = Module.ccall('get_buffer', 'number', [], []); } catch (e) {}
+                            this.editorGmeUiNode.onaudioprocess = (event) => {
+                                const outputBuffer = event.outputBuffer;
+                                const left = outputBuffer.getChannelData(0);
+                                const right = outputBuffer.getChannelData(1);
+                                const r = Module.ccall('play_gme', 'number', ['number'], [bufferSize]);
+                                if (r === 0) {
+                                    const data = new Int16Array(HEAPU8.buffer, this.editorGmeBufferPtr, bufferSize * 2);
+                                    for (let i = 0; i < bufferSize; i++) {
+                                        left[i] = data[i * 2] / 32768;
+                                        right[i] = data[i * 2 + 1] / 32768;
+                                    }
+                                } else {
+                                    // end
+                                    try { this.stopPlayback(); } catch (e) {}
+                                }
+                            };
+                            this.editorGmeUiNode.connect(this.editorGmeAudioContext.destination);
+                            this.currentPlayer = this.editorGmeUiNode;
+                            this.showStatus(`正在播放曲目 ${trackIndex + 1}/${this.totalTracks}`, 'success');
+                        } catch (e) {
+                            throw e;
+                        }
+                    } catch (e) {
+                        console.error('GME 播放失败', e);
+                        this.showStatus('播放失败: ' + e.message, 'error');
+                        this.currentPlayer = null;
+                    }
+                };
+
+                if (typeof Module === 'undefined') {
+                    // 动态加载 gme_player
+                    const script = document.createElement('script');
+                    script.src = '../lib/gme_player.js';
+                    script.onload = () => {
+                        if (Module && typeof Module.onRuntimeInitialized === 'function') {
+                            Module.onRuntimeInitialized = function() {
+                                try { playNow(); } catch (e) { console.error(e); }
+                            };
+                        } else {
+                            playNow();
+                        }
+                    };
+                    script.onerror = () => {
+                        this.showStatus('加载 GME 模块失败', 'error');
+                    };
+                    document.head.appendChild(script);
+                } else {
+                    playNow();
+                }
+            }
+
+            stopPlayback() {
+                // 停止 editor GME 节点
+                if (this.editorGmeUiNode) {
+                    try { this.editorGmeUiNode.disconnect(); } catch (e) {}
+                    this.editorGmeUiNode = null;
+                }
+
+                // 尝试通过 Module 停止 GME（如果提供了接口）
+                try {
+                    if (typeof Module !== 'undefined') {
+                        // 常见实现可能没有 stop_gme；使用 safe ccall
+                        try { Module.ccall('stop_gme', 'number', [], []); } catch (e) {}
+                    }
+                } catch (e) {
+                    // ignore
+                }
+
+                // 尝试将 editor audio context 暂停以释放音频硬件（不关闭以便快速恢复）
+                try {
+                    if (this.editorGmeAudioContext && typeof this.editorGmeAudioContext.suspend === 'function') {
+                        this.editorGmeAudioContext.suspend().catch(()=>{});
+                    }
+                } catch (e) {}
+
+                // 兼容旧的 currentPlayer 停止接口（移除 JSNSF 特有 stop）
+                const prevRow = this.currentPlayingRow;
+                if (this.currentPlayer) {
+                    try { if (typeof this.currentPlayer.stop === 'function') this.currentPlayer.stop(); } catch (e) {}
+                    this.currentPlayer = null;
+                }
+
+                // 不清除 currentPlayingRow —— 保留所选行以便用户可以再次播放或切曲
+                if (prevRow) {
+                    const cfg = this.configData[this.currentConfig];
+                    const mapping = cfg ? cfg.get(prevRow) : null;
+                    this.updatePlayerUI(mapping, prevRow);
+                } else {
+                    this.updatePlayerUI(null, null);
+                }
+                this.showStatus('播放已停止', 'info');
+            }
+
+            togglePlayback() {
+                // 浮动按钮行为（暂停/继续）：如果已经存在 player 且未 paused -> pause；如果 paused -> resume；
+                if (this.currentPlayer && !this.editorPaused) {
+                    this.pausePlayback();
+                } else if (this.editorPaused) {
+                    this.resumePlayback();
+                } else if (this.currentPlayingRow) {
+                    // 未播放 -> 启动播放（重启）
+                    const config = this.configData[this.currentConfig];
+                    const mapping = config.get(this.currentPlayingRow);
+                    if (mapping) {
+                        this.playTrack(mapping.path, this.currentTrackIndex, mapping.name);
+                    }
+                }
+            }
+
+            pausePlayback() {
+                // 断开输出节点但保留 Module 的内部播放状态
+                if (this.editorGmeUiNode) {
+                    try { this.editorGmeUiNode.disconnect(); } catch (e) {}
+                }
+                this.currentPlayer = null;
+                this.editorPaused = true;
+                // 更新浮动按钮显示为 ▶
+                if (this.currentPlayingRow) {
+                    const cfg = this.configData[this.currentConfig];
+                    const mapping = cfg ? cfg.get(this.currentPlayingRow) : null;
+                    this.updatePlayerUI(mapping, this.currentPlayingRow);
+                }
+            }
+
+            resumePlayback() {
+                // 从暂停恢复，重建并连接 ScriptProcessor（Module 内部继续播放）
+                if (!this.currentPlayingRow) return;
+                const cfg = this.configData[this.currentConfig];
+                const mapping = cfg ? cfg.get(this.currentPlayingRow) : null;
+                if (!mapping) return;
+
+                try {
+                    const bufferSize = 4096;
+                    if (!this.editorGmeAudioContext) this.editorGmeAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    try { if (this.editorGmeAudioContext.state === 'suspended') this.editorGmeAudioContext.resume().catch(()=>{}); } catch (e) {}
+                    if (this.editorGmeUiNode) { try { this.editorGmeUiNode.disconnect(); } catch (e) {} this.editorGmeUiNode = null; }
+                    this.editorGmeUiNode = this.editorGmeAudioContext.createScriptProcessor(bufferSize, 0, 2);
+                    try { this.editorGmeBufferPtr = Module.ccall('get_buffer', 'number', [], []); } catch (e) {}
+                    this.editorGmeUiNode.onaudioprocess = (event) => {
+                        const outputBuffer = event.outputBuffer;
+                        const left = outputBuffer.getChannelData(0);
+                        const right = outputBuffer.getChannelData(1);
+                        const r = Module.ccall('play_gme', 'number', ['number'], [bufferSize]);
+                        if (r === 0) {
+                            const data = new Int16Array(HEAPU8.buffer, this.editorGmeBufferPtr, bufferSize * 2);
+                            for (let i = 0; i < bufferSize; i++) {
+                                left[i] = data[i * 2] / 32768;
+                                right[i] = data[i * 2 + 1] / 32768;
+                            }
+                        } else {
+                            try { this.stopPlayback(); } catch (e) {}
+                        }
+                    };
+                    this.editorGmeUiNode.connect(this.editorGmeAudioContext.destination);
+                    this.currentPlayer = this.editorGmeUiNode;
+                    this.editorPaused = false;
+                    this.updatePlayerUI(mapping, this.currentPlayingRow);
+                } catch (e) {
+                    console.warn('resumePlayback error', e);
+                }
+            }
+
+            prevTrack() {
+                if (!this.currentPlayingRow || this.totalTracks <= 1) return;
+
+                this.currentTrackIndex = this.currentTrackIndex > 0 ? this.currentTrackIndex - 1 : this.totalTracks - 1;
+
+                const config = this.configData[this.currentConfig];
+                const mapping = config.get(this.currentPlayingRow);
+                if (mapping) {
+                    this.playTrack(mapping.path, this.currentTrackIndex, mapping.name);
+                    this.updatePlayerUI(mapping, this.currentPlayingRow);
+                }
+            }
+
+            nextTrack() {
+                if (!this.currentPlayingRow || this.totalTracks <= 1) return;
+
+                this.currentTrackIndex = (this.currentTrackIndex + 1) % this.totalTracks;
+
+                const config = this.configData[this.currentConfig];
+                const mapping = config.get(this.currentPlayingRow);
+                if (mapping) {
+                    this.playTrack(mapping.path, this.currentTrackIndex, mapping.name);
+                    this.updatePlayerUI(mapping, this.currentPlayingRow);
+                }
+            }
+
+            updatePlayerUI(mapping, code) {
+                const controls = document.getElementById('playerControls');
+                const info = document.getElementById('playerInfo');
+                const playPauseBtn = document.getElementById('playPauseBtn');
+
+                if (mapping && code) {
+                    controls.classList.remove('hidden');
+                    info.textContent = `${mapping.path} - 曲目 ${this.currentTrackIndex + 1}/${this.totalTracks}`;
+                    // 浮动按钮区分暂停和停止：如果处于 paused 显示 ▶（resume），如果正在播放显示 ⏸，否则显示 ▶
+                    if (this.editorPaused) playPauseBtn.textContent = '▶';
+                    else playPauseBtn.textContent = this.currentPlayer ? '⏸' : '▶';
+
+                    // 更新播放按钮状态
+                    document.querySelectorAll('.play-btn').forEach(btn => {
+                        btn.classList.remove('playing');
+                        btn.textContent = '试听';
+                    });
+
+                    const currentBtn = document.querySelector(`tr[data-code="${code}"] .play-btn`);
+                    // 仅当存在实际播放器（this.currentPlayer）时，将该行标记为停止
+                    if (currentBtn && this.currentPlayer) {
+                        currentBtn.classList.add('playing');
+                        currentBtn.textContent = '停止';
+                    }
+                } else {
+                    controls.classList.add('hidden');
+                    info.textContent = '未播放';
+
+                    // 重置所有播放按钮
+                    document.querySelectorAll('.play-btn').forEach(btn => {
+                        btn.classList.remove('playing');
+                        btn.textContent = '试听';
+                    });
+                }
+
+                // 播放器显示/隐藏可能影响布局，重新计算sticky top
+                this.computeStickyTop();
+            }
+
+            // 计算所有固定元素的总高度并设置到root的CSS变量 --sticky-top
+            computeStickyTop() {
+                try {
+                    const header = document.querySelector('.header');
+                    const toolbar = document.querySelector('.toolbar');
+                    const configSelector = document.querySelector('.config-selector');
+                    const playerControls = document.getElementById('playerControls');
+
+                    const headerH = header ? header.getBoundingClientRect().height : 0;
+                    const toolbarH = toolbar ? toolbar.getBoundingClientRect().height : 0;
+                    const configH = configSelector ? configSelector.getBoundingClientRect().height : 0;
+                    const playerH = (playerControls && !playerControls.classList.contains('hidden')) ? playerControls.getBoundingClientRect().height : 0;
+
+                    // 加上一点小间隙，防止视觉上紧贴
+                    const gap = 8;
+                    const total = Math.ceil(headerH + toolbarH + configH + playerH + gap);
+
+                    document.documentElement.style.setProperty('--sticky-top', total + 'px');
+                    // 便于调试：在 container 上设置一个属性（可选）
+                    // document.querySelector('.container').setAttribute('data-sticky-top', total);
+                } catch (e) {
+                    console.warn('computeStickyTop 失败:', e);
+                }
+            }
+
+            readTableData() {
+                const config = new Map();
+                const rows = document.querySelectorAll('#tableBody tr[data-code]');
+
+                for (const row of rows) {
+                    const code = row.dataset.code;
+                    const inputs = row.querySelectorAll('input, select');
+
+                    const mapping = {};
+                    for (const input of inputs) {
+                        const field = input.dataset.field;
+                        if (field) {
+                            if (input.type === 'number') {
+                                mapping[field] = parseInt(input.value) || 0;
+                            } else {
+                                mapping[field] = input.value.trim();
+                            }
+                        }
+                    }
+
+                    // 验证必填字段
+                    if (!mapping.path || mapping.index === undefined || !mapping.type) {
+                        console.warn(`代码 ${code} 缺少必填字段`);
+                        continue;
+                    }
+
+                    config.set(code, mapping);
+                }
+
+                this.configData[this.currentConfig] = config;
+            }
+
+            clearConfig() {
+                if (confirm('确定要清空当前配置吗？此操作不可撤销。')) {
+                    this.configData[this.currentConfig] = new Map();
+                    this.renderTable();
+                    this.showStatus('配置已清空', 'info');
+                }
+            }
+
+            downloadConfig() {
+                this.readTableData();
+
+                const exportContent = `// 自定义音乐映射配置
+// 格式: 代码 -> {name: 文件名, path: 文件路径, note: 备注}
+// 这个文件会在页面加载时自动覆盖默认配置
+
+// 如果你想修改配置，只需要编辑这个文件
+// 代码会自动检测并使用这里的配置
+// 可以添加不存在的代码作为背景音乐或者音效
+
+// 示例：使用 name 字段指定变量名
+// ["81", { name: "myCustomMusicData", path: "music/custom.js", index: 0, note: "自定义音乐示例", type: "bgm" }],
+
+window.musicConfig = new Map(${this.formatMapForExport(this.configData.musicConfig)});
+
+
+
+
+
+
+// 配置备份
+musicConfigback = new Map(${this.formatMapForExport(this.configData.musicConfigback)});
+`;
+
+                this.downloadFile(exportContent, 'music_config.js');
+                this.showStatus('配置已下载为 music_config.js', 'success');
+            }
+
+            downloadFile(content, filename) {
+                const blob = new Blob([content], { type: 'text/javascript' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }
+
+            formatMapForExport(map) {
+                if (!map || map.size === 0) {
+                    return '([])';
+                }
+
+                const formatted = Array.from(map.entries()).map(([key, value]) => {
+                    const valueStr = JSON.stringify(value);
+                    return `["${key}", ${valueStr}]`;
+                }).join(',\n\t');
+
+                return `([\n\t${formatted}\n])`;
+            }
+
+            showStatus(message, type) {
+                const status = document.getElementById('status');
+                status.textContent = message;
+                status.className = `status ${type}`;
+                status.style.display = 'block';
+
+                // 3秒后自动隐藏
+                setTimeout(() => {
+                    status.style.display = 'none';
+                }, 3000);
+            }
+
+            escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+        }
+
+        // 全局实例
+        let editor;
+        document.addEventListener('DOMContentLoaded', () => {
+            editor = new MusicConfigEditor();
+        });
+
+        // 暴露给按钮的全局函数
+        window.editor = {
+            playRow: (code) => editor && editor.playRow(code),
+            deleteRow: (code) => editor && editor.deleteRow(code)
+        };
+    </script>
+</body>
+</html></content>
+<parameter name="filePath">

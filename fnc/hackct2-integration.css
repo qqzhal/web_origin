@@ -1,0 +1,348 @@
+/**
+ * 修改器集成模式样式
+ * 优化集成模式下的界面显示和交互
+ */
+
+/* 集成模式标识 */
+body.integrated-mode {
+    background-color: #f5f5f5;
+}
+
+body.integrated-mode #main {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 10px;
+}
+
+/* 同步按钮样式 */
+#btnSyncToGame {
+    background: linear-gradient(135deg, #4CAF50, #45a049);
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: 500;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    margin-left: 10px;
+}
+
+#btnSyncToGame:hover:not(:disabled) {
+    background: linear-gradient(135deg, #45a049, #4CAF50);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+    transform: translateY(-1px);
+}
+
+#btnSyncToGame:active:not(:disabled) {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+#btnSyncToGame:disabled {
+    background: #cccccc;
+    color: #666666;
+    cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
+}
+
+#btnSyncToGame:disabled:hover {
+    background: #cccccc;
+    box-shadow: none;
+    transform: none;
+}
+
+/* 同步状态提示样式 */
+#syncStatusDiv {
+    font-family: 'Microsoft YaHei', '微软雅黑', Arial, sans-serif;
+    font-weight: 500;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    border: 1px solid rgba(255,255,255,0.2);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+}
+
+/* 集成模式下的文件状态显示 */
+body.integrated-mode #checknes {
+    background: linear-gradient(135deg, #2196F3, #1976D2);
+    color: white;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-weight: 500;
+    display: inline-block;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* 集成模式下的RAM类型显示 */
+body.integrated-mode #ramtype {
+    background: linear-gradient(135deg, #FF9800, #F57C00);
+    color: white;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-weight: 500;
+    display: inline-block;
+    margin-left: 10px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* 集成模式下的菜单样式优化 */
+body.integrated-mode #menu {
+    background: linear-gradient(135deg, #3F51B5, #303F9F);
+    border-radius: 8px 8px 0 0;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    overflow: hidden;
+}
+
+body.integrated-mode #menu li.ctab {
+    background: transparent;
+    color: rgba(255,255,255,0.8);
+    border: none;
+    transition: all 0.3s ease;
+    position: relative;
+}
+
+body.integrated-mode #menu li.ctab:hover {
+    background: rgba(255,255,255,0.1);
+    color: white;
+}
+
+body.integrated-mode #menu li.tabFocus {
+    background: rgba(255,255,255,0.2);
+    color: white;
+    font-weight: 600;
+}
+
+body.integrated-mode #menu li.tabFocus::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #4CAF50, #2196F3);
+    border-radius: 2px;
+}
+
+/* 集成模式下的内容区域样式 */
+body.integrated-mode #content {
+    background: white;
+    border-radius: 0 0 8px 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    border: 1px solid #e0e0e0;
+    overflow: hidden;
+}
+
+body.integrated-mode #content li.ctab {
+    padding: 20px;
+    background: white;
+}
+
+/* 集成模式下的按钮样式统一 */
+body.integrated-mode button {
+    font-family: 'Microsoft YaHei', '微软雅黑', Arial, sans-serif;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    border-radius: 4px;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+body.integrated-mode button:hover {
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    transform: translateY(-1px);
+}
+
+body.integrated-mode button:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* 主要功能按钮样式 */
+body.integrated-mode #Teamedit_x_0,
+body.integrated-mode #playeredit_x_0,
+body.integrated-mode #playeredit_x_1,
+body.integrated-mode #playeredit_x_2,
+body.integrated-mode #playeredit_x_3,
+body.integrated-mode #aitab_0,
+body.integrated-mode #aitab_1,
+body.integrated-mode #aitab_2,
+body.integrated-mode #aitab_3,
+body.integrated-mode #aitab_4,
+body.integrated-mode #aitab_5,
+body.integrated-mode #aitab_6,
+body.integrated-mode #aitab_7,
+body.integrated-mode #chr_x_0,
+body.integrated-mode #chr_x_1,
+body.integrated-mode #chr_x_2,
+body.integrated-mode #chr_x_3 {
+    background: linear-gradient(135deg, #607D8B, #455A64);
+    color: white;
+    padding: 8px 16px;
+    margin: 2px;
+    font-size: 13px;
+}
+
+body.integrated-mode #Teamedit_x_0:hover,
+body.integrated-mode #playeredit_x_0:hover,
+body.integrated-mode #playeredit_x_1:hover,
+body.integrated-mode #playeredit_x_2:hover,
+body.integrated-mode #playeredit_x_3:hover,
+body.integrated-mode #aitab_0:hover,
+body.integrated-mode #aitab_1:hover,
+body.integrated-mode #aitab_2:hover,
+body.integrated-mode #aitab_3:hover,
+body.integrated-mode #aitab_4:hover,
+body.integrated-mode #aitab_5:hover,
+body.integrated-mode #aitab_6:hover,
+body.integrated-mode #aitab_7:hover,
+body.integrated-mode #chr_x_0:hover,
+body.integrated-mode #chr_x_1:hover,
+body.integrated-mode #chr_x_2:hover,
+body.integrated-mode #chr_x_3:hover {
+    background: linear-gradient(135deg, #455A64, #607D8B);
+}
+
+/* 保存按钮样式 */
+body.integrated-mode #btnsave {
+    background: linear-gradient(135deg, #FF5722, #E64A19);
+    color: white;
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+body.integrated-mode #btnsave:hover:not(:disabled) {
+    background: linear-gradient(135deg, #E64A19, #FF5722);
+}
+
+/* 集成模式下的输入框样式 */
+body.integrated-mode input[type="text"],
+body.integrated-mode input[type="number"],
+body.integrated-mode select,
+body.integrated-mode textarea {
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-family: 'Microsoft YaHei', '微软雅黑', Arial, sans-serif;
+    font-size: 13px;
+    transition: all 0.3s ease;
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+}
+
+body.integrated-mode input[type="text"]:focus,
+body.integrated-mode input[type="number"]:focus,
+body.integrated-mode select:focus,
+body.integrated-mode textarea:focus {
+    border-color: #2196F3;
+    box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.2);
+    outline: none;
+}
+
+/* 集成模式下的表格样式 */
+body.integrated-mode table {
+    border-collapse: collapse;
+    width: 100%;
+    background: white;
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+body.integrated-mode th {
+    background: linear-gradient(135deg, #3F51B5, #303F9F);
+    color: white;
+    padding: 10px;
+    text-align: left;
+    font-weight: 500;
+}
+
+body.integrated-mode td {
+    padding: 8px 10px;
+    border-bottom: 1px solid #eee;
+}
+
+body.integrated-mode tr:hover {
+    background-color: #f8f9fa;
+}
+
+/* 集成模式下的状态指示器 */
+.integration-status {
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    background: rgba(0,0,0,0.8);
+    color: white;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    z-index: 10000;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    border: 1px solid rgba(255,255,255,0.1);
+}
+
+.integration-status.connected {
+    background: rgba(76, 175, 80, 0.9);
+}
+
+.integration-status.syncing {
+    background: rgba(255, 152, 0, 0.9);
+}
+
+.integration-status.error {
+    background: rgba(244, 67, 54, 0.9);
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    body.integrated-mode #main {
+        padding: 5px;
+    }
+    
+    body.integrated-mode #menu li.ctab {
+        font-size: 12px;
+        padding: 8px 10px;
+    }
+    
+    body.integrated-mode #content li.ctab {
+        padding: 10px;
+    }
+    
+    #btnSyncToGame {
+        font-size: 12px;
+        padding: 6px 12px;
+    }
+}
+
+/* 动画效果 */
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.7; }
+    100% { opacity: 1; }
+}
+
+.syncing {
+    animation: pulse 1.5s infinite;
+}
+
+/* 加载动画 */
+.loading-spinner {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid #f3f3f3;
+    border-top: 2px solid #2196F3;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-left: 8px;
+    vertical-align: middle;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}

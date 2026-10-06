@@ -1,0 +1,654 @@
+/* 清空所有基础样式，仅保留弹出层和透明按钮相关 */
+body, * {
+  font-family: "Consolas", "Menlo", "Monaco", "Courier New", monospace,"Microsoft YaHei Mono" !important;
+}
+/* ========== 基础重置 ========== */
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  height: 100vh;
+  box-sizing: border-box;
+  font-family: system-ui, Arial, sans-serif;
+  background: #222;
+  overflow: hidden;
+}
+
+/* ========== NSF播放器样式 ========== */
+.nsf-ui-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: #181818;
+  color: white;
+  z-index: 10010;
+  padding: 10px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  font-family: Arial, sans-serif;
+}
+
+
+.nsf-info-container {
+  padding: 4px 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.nsf-title {
+  font-size: 1.2rem;
+  font-weight: bold;
+  color: #5fcf5b;
+  white-space: nowrap;
+}
+
+.nsf-button-group {
+  display: flex;
+  gap: 8px;
+}
+
+.nsf-button {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+  background: #333;
+  color: #fff;
+  border: 1px solid #444;
+}
+
+.nsf-button:hover {
+  background: #444;
+}
+
+.nsf-button-secondary {
+  background: #333;
+  border-color: #FFD700;
+  color: #FFD700;
+}
+
+.nsf-button-secondary:hover {
+  background: #444;
+}
+
+.nsf-controls-container {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.nsf-control-button {
+  width: 40px;
+  height: 40px;
+  font-size: 1.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nsf-control-button.nsf-button-active {
+  background: #ffd700;
+  color: #000;
+}
+
+.nsf-mode-button {
+  padding: 6px 12px;
+  font-size: 0.9rem;
+}
+
+.nsf-fps-button {
+  padding: 6px 12px;
+  font-size: 0.9rem;
+  background: #555;
+}
+
+.nsf-song-info {
+  margin-bottom: 15px;
+}
+
+.nsf-info-label {
+  margin-bottom: 5px;
+  font-size: 0.9rem;
+}
+
+.nsf-info-label strong {
+  color: #aaa;
+}
+
+.nsf-song-number {
+  color: #ffd700;
+  font-weight: bold;
+}
+
+.nsf-chip-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.nsf-chip {
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: #333;
+  color: #aaa;
+  font-size: 0.8rem;
+}
+
+.nsf-chip.nsf-chip-enabled {
+  background: #5fcf5b;
+  color: white;
+}
+
+.nsf-tech-info {
+  margin-bottom: 15px;
+}
+
+.nsf-tech-text {
+  font-size: 0.8rem;
+  color: #aaa;
+}
+
+.nsf-wave-container {
+  
+  overflow: hidden;
+  z-index: 10011;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .nsf-ui-container {
+    padding: 5px;
+  }
+  
+  .nsf-button-group {
+    width: 100%;
+    justify-content: space-between;
+  }
+  
+  .nsf-button {
+    padding: 5px 8px;
+    font-size: 0.8rem;
+  }
+  
+  .nsf-controls-container {
+    gap: 5px;
+  }
+  
+  .nsf-control-button {
+    width: 35px;
+    height: 35px;
+    font-size: 1rem;
+  }
+  
+  .nsf-info-label {
+    font-size: 0.8rem;
+  }
+  
+  .nsf-wave-container {
+    height: 60px;
+  }
+}
+
+/* ========== 全屏容器和canvas ========== */
+#fullscreenContainer {
+  position: fixed;
+  left: 0; top: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: #222;
+  z-index: 0;
+}
+
+/* NES画面自适应铺满窗口，横向居中，保持比例(由JS控制宽高) */
+#output {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  margin-left: auto;
+  margin-right: auto;
+  display: block;
+  background: #222;
+  box-shadow: 0 2px 16px #0008;
+  border: none;
+  outline: none;
+  margin-top: 0;
+  margin-bottom: 0;
+  padding: 0;
+  z-index: 1;
+    image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  /* 宽高由JS动态设置，保证比例 */
+}
+
+.status-bar {
+  position: absolute;
+  top: 1px;  /* 距离顶部 10px，可根据需要调整 */
+
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  font-size: 1rem;
+
+  border-radius: 4px;
+  z-index: 9999;
+
+}
+.status-bar-close {
+  background: transparent;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+}
+
+
+/* ========== 菜单按钮（左上角） ========== */
+#msub{
+  position: fixed;
+  right: 1rem;
+  top: 1rem;
+  z-index: 10;
+  font-size: 1.1em;
+  padding: 0.5em 1.2em;
+  border-radius: 8px;
+  border: 1.5px solid #bbb;
+  background: #f8f8f8;
+  cursor: pointer;
+  box-shadow: 0 1px 4px #0002;
+  transition: background 0.2s, box-shadow 0.2s;
+  pointer-events: auto;
+  user-select: none;
+}
+
+body.fullscreen #msub { display: block !important; }
+
+/* ========== 菜单按钮分组并排布局 ========== */
+
+
+/* ========== 弹出层/菜单/对话框 ========== */
+.controller-dialog,
+.cheat-dialog {
+  position: fixed;
+  left: 50%; top: 50%;
+  transform: translate(-50%,-50%);
+  min-width: 220px;
+  max-width: 96vw;
+  background: #fff;
+  border: 2px solid #888;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  padding: 1.2em 1.2em 1em 1.2em;
+  z-index: 10010;
+  display: none;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.7em;
+  color: #222;
+  font-size: 1.08em;
+}
+
+/* 优化非模拟器区域的公共样式 */
+body:not(.simulator) .menus,
+body:not(.simulator) .controller-dialog,
+body:not(.simulator) .cheat-dialog {
+  font-size: 1rem;
+  padding: 0.5rem;
+  width: auto;
+  max-width: 98vw;
+  max-height: 90vh;
+}
+
+
+
+/* 其它组件的流式布局处理 */
+#logArea, #memory-viewer {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.5rem;
+}
+
+/* ========== 调试面板样式 ========== */
+#wrapper {
+  position: relative;
+  width: auto;
+  max-width: none;
+  max-height: 100vh;
+  overflow: auto;
+  background: rgba(0,0,0,0.8);
+  border-radius: 8px;
+  padding: 8px;
+  box-sizing: border-box;
+}
+
+/* ========== 透明手柄按钮及编辑浮动栏 ========== */
+.transparent-overlay {
+  position: absolute;
+  left: 0; top: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 10020; /* 置于菜单按钮之上，内部按钮可点；父层仍禁用事件 */
+  touch-action: none;
+  overflow: visible;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.transparent-button,
+.transp-btn-dpad {
+  position: absolute;
+  background: linear-gradient(135deg,rgba(60,60,60,0.18),rgba(220,220,220,0.18));
+  border: 2px solid rgba(0,0,0,0.35);
+  border-radius: 8px;
+  pointer-events: auto;
+  cursor: pointer;
+  transition: box-shadow 0.2s, outline 0.2s;
+  box-shadow: 0 0 0 2px rgba(0,0,0,0.35), 0 2px 8px rgba(0,0,0,0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  overflow: visible;
+  touch-action: none;
+  font-size: 1.15em;
+  min-width: 44px;
+  min-height: 44px;
+}
+.transparent-button.selected,
+.transp-btn-dpad.selected {
+  outline: 3px solid #4af !important;
+  z-index: 1002 !important;
+}
+.transp-btn-circle {
+  border-radius: 50%;
+  background: radial-gradient(circle at 60% 40%, #fff8, #f00a 80%, #0002 100%);
+}
+.transp-btn-rect {
+   border-radius: 8px !important;
+  background: linear-gradient(180deg, #fff8 0%, #8882 100%);
+}
+.transp-btn-label {
+  font-size: 1.25em;
+  font-weight: bold;
+  color: #fff;
+  text-shadow: 0 1px 2px #0008;
+  pointer-events: none;
+}
+.transp-btn-dir {
+  border-radius: 10px;
+  background: linear-gradient(135deg, #fff5 0%, #3333 100%);
+}
+.transp-btn-dpad {
+  border-radius: 18px;
+  background: rgba(0,0,0,0.18);
+  box-shadow: 0 0 0 2px rgba(0,0,0,0.35);
+  border: 2px solid rgba(0,0,0,0.35);
+}
+.transp-resize-handle {
+  position: absolute;
+  right: -8px;
+  bottom: -8px;
+  width: 16px;
+  height: 16px;
+  background: rgba(255,255,255,0.7);
+  border: 1.5px solid #888;
+  border-radius: 50%;
+  cursor: nwse-resize;
+  z-index: 2;
+  box-shadow: 0 0 4px #8884;
+}
+.transp-resize-handle:after {
+  content: "";
+  display: block;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid #888;
+  border-bottom: 2px solid #888;
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+}
+
+.transp-float-bar button:hover {
+  background: #e0e0e0;
+  box-shadow: 0 2px 8px #8882;
+}
+
+/* 透明按钮点击反馈（非编辑模式下） */
+.transparent-button:not(.transp-editing):active,
+.transparent-button.transp-pressed {
+  filter: brightness(1.7) drop-shadow(0 0 8px #fff8);
+  box-shadow: 0 0 12px #fff8, 0 2px 8px #0004;
+  border-color: #4af;
+  transition: filter 0.08s, box-shadow 0.08s, border-color 0.08s;
+}
+
+/* 十字键方向高亮动画（非编辑模式下） */
+.transp-btn-dpad .dpad-dir-highlight {
+  position: absolute;
+  pointer-events: none;
+  z-index: 2;
+  opacity: 0;
+  transition: opacity 0.08s;
+}
+.transp-btn-dpad .dpad-dir-highlight.active {
+  opacity: 1;
+  filter: brightness(2.2) drop-shadow(0 0 12px #fff);
+}
+
+/* 编辑模式下不显示点击/高亮动画 */
+.transparent-button.transp-editing,
+.transp-btn-dpad.transp-editing,
+.transparent-button.transp-editing:active,
+.transp-btn-dpad.transp-editing .dpad-dir-highlight {
+  filter: none !important;
+  box-shadow: 0 0 0 2px rgba(0,0,0,0.35), 0 2px 8px rgba(0,0,0,0.08) !important;
+  border-color: rgba(0,0,0,0.35) !important;
+  opacity: 1 !important;
+}
+
+/* ========== 汉堡按钮样式 ========== */
+.hamburger {
+  width: 40px;
+  height: 40px;
+  padding: 8px;
+  background: rgba(255,255,255,0.9);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  position: relative;
+  z-index: 10011;
+}
+
+.hamburger-line {
+  width: 100%;
+  height: 3px;
+  background: #333;
+  border-radius: 3px;
+  transition: all 0.3s ease;
+  transform-origin: left;
+}
+
+.hamburger.active .hamburger-line:nth-child(1) {
+  transform: rotate(45deg) translate(2px, -2px);
+}
+
+.hamburger.active .hamburger-line:nth-child(2) {
+  opacity: 0;
+}
+
+.hamburger.active .hamburger-line:nth-child(3) {
+  transform: rotate(-45deg) translate(2px, 2px);
+}
+
+
+
+/* ========== 响应式 ========== */
+@media (max-width: 600px) {
+  html, body, #fullscreenContainer {
+    font-size: 13px;
+    width: 100vw;
+    height: 100vh;
+    max-width: 100vw;
+    max-height: 100vh;
+    overflow-x: hidden;
+  }
+ 
+
+  .controller-dialog,
+  .cheat-dialog {
+    min-width: 0;
+    max-width: 98vw;
+    padding: 0.6em 0.4em;
+    border-radius: 0.5em;
+    font-size: 1em;
+    overflow-y: auto;
+  }
+  #cheatListArea,.cheat-tip{
+
+    overflow-y: auto !important;
+  }
+
+  .transparent-button,
+  .transp-btn-dpad {
+    font-size: 0.95em;
+    min-width: 30px;
+    min-height: 30px;
+    border-radius: 10px;
+  }
+  .transp-btn-label {
+    font-size: 1em;
+  }
+  .transp-float-bar button {
+    font-size: 0.95em;
+    padding: 0.6em 1em;
+    border-radius: 8px;
+  }
+  select {
+    font-size: 0.95em;
+    padding: 0.4em 0.8em 0.4em 0.5em;
+    border-radius: 7px;
+  }
+  #wrapper {
+    position: relative;
+    max-width: 95vw;
+  }
+
+  .hamburger {
+    width: 36px;
+    height: 36px;
+    padding: 6px;
+  }
+  
+
+}
+
+@media (max-width: 400px) {
+  html, body, #fullscreenContainer {
+    font-size: 11px;
+  }
+ 
+  
+ 
+  .transparent-button,
+  .transp-btn-dpad {
+    font-size: 0.85em;
+    min-width: 24px;
+    min-height: 24px;
+    border-radius: 8px;
+  }
+  .transp-btn-label {
+    font-size: 0.95em;
+  }
+ 
+}
+
+/* ========== 全屏提示与按钮 ========== */
+#fullscreen-exit-tip {
+  position: fixed;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(40,40,40,0.92);
+  color: #fff;
+  font-size: 1.15em;
+  padding: 0.7em 2em;
+  border-radius: 0 0 18px 18px;
+  z-index: 20010;
+  pointer-events: none;
+  opacity: 0.96;
+  box-shadow: 0 2px 12px #0004;
+  display: none;
+}
+#fullscreen-exit-btn {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(40,40,40,0.85);
+  color: #fff;
+  font-size: 1.15em;
+  padding: 0.7em 2em;
+  border-radius: 18px;
+  z-index: 20010;
+  border: none;
+  opacity: 0.95;
+  box-shadow: 0 2px 12px #0004;
+  display: none;
+}
+#fullscreen-exit-btn:active {
+  background: #f55;
+}
+
+/* 其它优化细节 */
+button {
+  cursor: pointer;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+button:hover {
+  background: #e0e0e0;
+}
+
+/* ========== 滚动条美化（简洁，微小圆角） ========== */
+:root {
+  --scrollbar-bg: transparent;
+  --scrollbar-thumb: #555;
+  --scrollbar-thumb-hover: #6a6a6a;
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-bg);
+}
+
+/* WebKit (Chrome/Edge/Safari) */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: var(--scrollbar-bg);
+}
+*::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+}
+

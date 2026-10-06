@@ -1,0 +1,74 @@
+{
+  "log.save.loaded_battery": {
+    "zh": "已加载电池存档",
+    "en": "Loaded battery"
+  },
+  "log.save.saved_battery": {
+    "zh": "已保存电池存档",
+    "en": "Saved battery"
+  },
+  "log.save.failed_save_battery": {
+    "zh": "保存电池存档失败: {err}",
+    "en": "Failed to save battery: {err}"
+  },
+  "log.save.saved_state": {
+    "zh": "已保存状态",
+    "en": "Saved state"
+  },
+  "log.save.failed_save_state": {
+    "zh": "保存状态失败: {err}",
+    "en": "Failed to save state: {err}"
+  },
+  "log.save.loaded_state": {
+    "zh": "已加载状态",
+    "en": "Loaded state"
+  },
+  "log.save.failed_load_state": {
+    "zh": "加载状态失败",
+    "en": "Failed to load state"
+  },
+  "log.save.no_state": {
+    "zh": "尚未保存状态",
+    "en": "No state saved yet"
+  },
+  "log.zip.loaded": {
+    "zh": "已从zip加载 \"{name}\"",
+    "en": "Loaded \"{name}\" from zip"
+  },
+  "log.zip.no_nes": {
+    "zh": "zip中未找到.nes文件",
+    "en": "No .nes file found in zip"
+  },
+  "log.zip.no_nsf": {
+    "zh": "zip中未找到.nsf文件",
+    "en": "No .nsf file found in zip"
+  },
+  "log.zip.empty": {
+    "zh": "zip文件为空",
+    "en": "Zip file was empty"
+  },
+  "log.zip.failed": {
+    "zh": "读取zip失败: {err}",
+    "en": "Failed to read zip: {err}"
+  },
+  "log.pause.paused": {
+    "zh": "暂停游戏",
+    "en": "Game paused"
+  },
+  "log.pause.unpaused": {
+    "zh": "继续游戏",
+    "en": "Game resumed"
+  },
+  "log.debugger.invalid_bp_addr": {
+    "zh": "断点地址无效",
+    "en": "Invalid address for breakpoint"
+  },
+  "log.palette.loaded_palette": {
+    "zh": "已加载调色板: {name}",
+    "en": "Loaded palette: {name}"
+  },
+  "log.imagefilter.switch": {
+    "zh": "[NES滤镜] 切换滤镜: {filter}",
+    "en": "[NES Filter] Switch filter: {filter}"
+  }
+}

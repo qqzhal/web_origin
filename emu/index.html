@@ -1,0 +1,298 @@
+<!doctype html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <link rel="stylesheet" type="text/css" href="dstyle.css?v45">
+  <link rel="stylesheet" type="text/css" href="css/gamepad.css?v45">
+    <link rel="stylesheet" type="text/css" href="css/menus.css?v45">
+  <title>NesJS_for Hack CT2 web</title>
+</head>
+
+<body>
+  <!-- 新增全屏容器 -->
+  <div id="fullscreenContainer" style="position:relative;">
+    <div id="statusBar" class="status-bar"
+      style="width:100%;white-space:pre-wrap;word-break:break-all;margin:0;padding:0;line-height:1.3; display:flex; align-items:center; justify-content:center; position:relative;">
+      <pre id="nesornsf"
+        style="width:100%;white-space:pre-wrap;word-break:break-all;margin:0;padding:0;line-height:1.3;text-align:center;display:block;">控制器按键-可拖拽nes/nsf/zip文件到网页中 AB按钮=JK 上下左右=WSAD 选择=F开始=G 快速存读档 12,存档列表3,重启F1 点击我可以切换NSF/NES模式 <button id="statusBarClose" class="status-bar-close">X</button></pre>
+
+    </div>
+    <canvas id="output"></canvas>
+    <!-- 屏幕中间的载入浮层（仅当未加载游戏时显示） -->
+    <div id="loadOverlay" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:10002;display:flex;align-items:center;justify-content:center;">
+      <div id="loadOverlayCard" style="background:rgba(0,0,0,0.85);color:#fff;padding:18px;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,0.6);text-align:center;min-width:220px;">
+        <div id="loadOverlayText" style="font-size:18px;margin-bottom:10px;cursor:pointer;font-weight:600;">载入游戏</div><br>
+        <div id="loadOverlayAbout" style="font-size:13px;color:#cfd8dc;cursor:pointer;text-decoration:underline;">模拟器更新日志</div>
+      </div>
+    </div>
+    <div class="menus">
+      <button id="menu-toggle" class="hamburger" aria-controls="menu-dropdown" aria-expanded="false">
+        <span class="hamburger-line"></span>
+        <span class="hamburger-line"></span>
+        <span class="hamburger-line"></span>
+      </button>
+      <div id="menu-backdrop" class="menu-backdrop" hidden></div>
+      <div id="menu-dropdown" class="menu-dropdown" aria-hidden="true" hidden>
+        <div class="menu-header" style="display: none;">
+          <span class="menu-title">菜单</span>
+          <button id="menu-close" class="menu-close" type="button" aria-label="关闭菜单">&times;</button>
+        </div>
+        <ul class="menu-section-list">
+          <li class="menu-group">
+            <button class="menu-group-toggle" type="button" aria-expanded="false">文件</button>
+            <div class="group-content" hidden>
+              <input id="rom" type="file">
+            </div>
+          </li>
+          <li class="menu-group">
+            <button class="menu-group-toggle" type="button" aria-expanded="false">选项</button>
+            <div class="group-content" hidden>
+              <div class="row"><button id="fullsc_">全屏</button></div>
+              <div class="row"><button id="reset">软启</button></div>
+              <div class="row"><button id="hardreset">硬启</button></div>
+              <div class="row"><button id="Cheat">金手指</button></div>
+              <div class="row"><button id="controllerBtn">按键设置</button></div>
+              <div class="row"><button id="showjoybuttons">触屏按钮</button></div>
+              <div class="row"><label style="margin-left:0;"><input type="checkbox" id="skipFrameCheckbox">开启跳帧</label></div>
+              <div class="row"><label style="margin-left:0;"><input type="checkbox" id="show240Checkbox">裁剪240</label></div>
+              <div class="row"><label style="margin-left:0;"><input type="checkbox" id="unlimitedSpritesCheckbox" checked>不限制活动块</label></div>
+              <div class="row" id="skipFrameSelectRow" style="display:none;">
+                <div class="label">跳帧间隔:</div>
+                <select id="skipFrameSelect">
+                  <option value="1">1x(不跳)</option>
+                  <option value="2">2x</option>
+                  <option value="3">3x</option>
+                </select>
+              </div>
+              <div class="row"><label style="margin-left:0;"><input type="checkbox" id="showFpsCheckbox">显示FPS</label></div>
+              <div class="row" style="display:none;"><button id="pause">暂停</button></div>
+            </div>
+          </li>
+          <li class="menu-item">
+            <button id="debugPanelBtn" class="menu-action" type="button">调试面板</button>
+          </li>
+          <li class="menu-group">
+            <button class="menu-group-toggle" type="button" aria-expanded="false">设置</button>
+            <div class="group-content" hidden>
+              <div class="row">
+                <div class="label">调色板</div><select id="palettes"></select>
+              </div>
+              <div class="row">
+                <div class="label">采样率</div><select id="sampleRateSelect">
+                  <option value="11025">11025Hz</option>
+                  <option value="22050">22050Hz</option>
+                  <option value="32000">32000Hz</option>
+                  <option value="44100">44100Hz</option>
+                  <option value="48000">48000Hz</option>
+                </select>
+              </div>
+              <div class="row">
+                <div class="label">缓冲区</div><select id="bufferSizeSelect">
+                  <option value="4096">4096</option>
+                  <option value="8192">8192</option>
+                  <option value="16384">16384</option>
+                  <option value="32768">32768</option>
+                </select>
+              </div>
+              <div class="row">
+                <div class="label">缩放模式:</div>
+                <select id="scalingModeSelect">
+                  <option value="pixelated">像素化（nearest）</option>
+                  <option value="smooth">平滑（linear）</option>
+                  <option value="integer">整数倍</option>
+                </select>
+              </div>
+              <div class="row">
+                <label style="margin-left:0; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="highDpiCheckbox">高DPI 模式</label>
+              </div>
+              <div class="row">
+                <div class="label">渲染后端:</div>
+                <div style="display:flex;gap:8px;align-items:center;">
+                  <label style="font-size:13px;"><input type="radio" name="renderBackend" value="2d" id="rb2d" checked> 2D</label>
+                  <label style="font-size:13px;"><input type="radio" name="renderBackend" value="webgl" id="rbwebgl"> WebGL</label>
+                </div>
+              </div>
+              <div class="row">
+                <div class="label">滤镜:</div>
+                <select id="filterSelect">
+                  <option value="none">无</option>
+                  <option value="multiBuffer">多倍缓冲</option>
+                  <option value="NSTC">NSTC</option>
+                  <option value="PAL">PAL</option>
+                </select>
+              </div>
+              <div class="row" id="multiBufferRow" style="display:none;">
+                <div class="label">缓冲倍数:</div>
+                <select id="multiBufferSelect">
+                  <option value="3">3x</option>
+                  <option value="6">6x</option>
+                </select>
+              </div>
+              <div style="font-size:12px;color:#cfd8dc;margin-top:6px;line-height:1.2;">说明：像素化 使用最近邻插值（保留方块像素）；<br>
+平滑 使用线性插值（会模糊）；<br>
+整数倍仅允许1x/2x/3x 等整数放大；<br>
+勾选“高DPI 模式”可在高分屏上使用更多物理像素提高清晰度（会使用额外的显存），刷新页面后生效；<br>
+切换渲染模式2d/webgl会强制刷新页面。</div>
+设置会保存到localStorage<br>
+            </div>
+          </li>
+          <li class="menu-group">
+            <button class="menu-group-toggle" type="button" aria-expanded="false">CT2专用</button>
+            <div class="group-content" hidden>
+              <div class="row"><button id="openHackCT2Btn">打开内置hack CT2</button></div>
+              <div class="row"><button id="customMusic">自定义音轨</button></div>
+              <div class="row"><button id="ct2cheat">天使之翼2专用金手指</button></div>
+              <div class="row" style="display: none;"><button id="ct2ToolsBtn">CT2 工具面板</button></div>
+              <div class="row"><button id="openAshackRom" onclick="openAshackRom();">强制开启0000-6000动态内存</button></div>
+              <div class="row"><button id="matchInfobtn">对阵信息(赛中辅助)</button></div>
+            </div>
+          </li>
+          <li class="menu-item">
+            <button id="openGameInfoBtn" class="menu-action" type="button">游戏信息</button>
+          </li>
+          <li class="menu-item">
+            <button id="aboutme" class="menu-action" type="button">关于</button>
+          </li>
+        </ul>
+      </div>
+      <div id="mainArea">
+        <div id="logArea" style="display:none;"><br><br><br><br>
+          <pre id="log"></pre>
+          <p>
+            Source on <a href="https://github.com/angelo-wf/Nesjs">Github</a>.
+          </p>
+        </div>
+      </div>
+      <div id="fullscreen-exit-tip">按 Esc 退出全屏</div>
+      <button id="fullscreen-exit-btn">退出全屏</button>
+      <div id="wrapper" style="display:none;">
+        <button class="close-debug-btn" id="closeDebugPanelBtn" title="关闭调试面板">&times;</button>
+        <div id="disasm_dragbar"
+          style="width:100%;height:18px;cursor:move;background:#e0e0e0;border-radius:8px 8px 0 0;margin-bottom:4px;text-align:center;font-size:13px;letter-spacing:2px;color:#888;">
+          调试器 (可拖动)</div>
+        <div id="tr">
+          功能选择:<select id="debugViewSelect">
+
+            <option value="3">调试器(仿VirtuaNES debug)</option>
+            <option value="2">内存查看器</option>
+            <option value="0">CHR&调色板</option>
+            <option value="1">Nametables</option>
+            <option value="4">精灵</option>
+          </select>
+<canvas id="doutput" style="display: block;"></canvas>
+          <div id="nametableOptions" style="display: none; margin-top: 10px;">
+            <label>Line: <input type="number" id="updateLineInput" min="0" max="261" value="120"></label>
+            <button
+              onclick="document.getElementById('updateLineInput').value=120; document.getElementById('updateLineInput').dispatchEvent(new Event('change'));">120</button>
+            <button
+              onclick="document.getElementById('updateLineInput').value=240; document.getElementById('updateLineInput').dispatchEvent(new Event('change'));">240</button>
+
+            <!-- Nametable 信息表格将通过JavaScript动态创建 -->
+          </div>
+
+          <div>
+            
+            <!-- 鼠标悬停显示Tile ID -->
+            <div id="tileHoverInfo" style="position: absolute; background: rgba(0,0,0,0.8); color: #fff; padding: 4px 8px; border-radius: 4px; font-family: monospace; font-size: 14px; font-weight: bold; pointer-events: none; display: none; z-index: 1000; border: 2px solid #fff;"></div>
+            <div id="chrviewdiv" style="display: none"><canvas id="chapage" width="128" height="128"></canvas><select
+                id="chapageID"></select>
+            </div>
+            <div id="spriteChrOptions" style="display: none; margin-top: 10px;">
+              <label>CHR源:
+                <select id="spriteChrSourceSelect" style="margin-left:6px;">
+                  <option value="auto">Auto (PPU preferred)</option>
+                  <option value="ppu">PPU only</option>
+                  <option value="rom">ROM only</option>
+                  <option value="ram">RAM only (use $0490 mapping)</option>
+                </select>
+              </label>
+              <br>
+              <label><input type="checkbox" id="reverseOAM" checked> Reverse OAM</label>
+              <label><input type="checkbox" id="respectPriority"> Respect priority</label>
+              <label><input type="checkbox" id="spriteZoom2x" checked> 放大2倍</label>
+              <br>
+              <label><input type="checkbox" id="legacyDraw"> Legacy Draw</label>
+              <label><input type="checkbox" id="compositeSprites"> Composite Sprites</label>
+              <label><input type="checkbox" id="drawSpriteBorders"> 显示边框</label>
+
+              <!-- Sprite 信息表格将通过JavaScript动态创建 -->
+            </div>
+
+          </div>
+          <div id="viewram" style="display: none;">
+            <select id="ramtype">
+              <option value="0">CPU内存</option>
+              <option value="1">PPU内存</option>
+              <option value="2">PRG</option>
+              <option value="3">Chr</option>
+              <option value="4">命名表Ram</option>
+              <option value="5">调色板</option>
+              <option value="6">精灵Ram</option>
+            </select>
+            <button id="prepage">上一页</button>
+            <button id="nexpage">下一页</button>
+
+            <div style=" background: #fff; color: #fff; font-family: monospace; font-size: 14px; ">
+              0x000000: 00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F 10 </div>
+            <div id="memory-viewer"
+              style="height: 400px; overflow-y: auto; background: #181818; color: #fff; font-family: monospace; font-size: 14px; border: 1px solid #444; position: relative;">
+              <div id="memory-fake-height"></div>
+              <pre id="dtextoutput" class="state"
+                style="margin: 0; white-space: pre; line-height: 1.5; padding: 0.5em;"></pre>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+    <script src="js/afunction.js?v45"></script>
+    <script src="lib/zip.js?v45"></script>
+    <script src="lib/inflate.js?v45"></script>
+    <script src="nes/mappers.js?v45"></script>
+    <script src="nes/cpu.js?v45"></script>
+    <script src="nes/pipu.js?v45"></script>
+    <script src="nes/apu.js?v45"></script>
+    <script src="mappers/ApuEX/loader.js?v45"></script>
+    <script src="nes/nes.js?v45"></script>
+    <script src="js/debugger.js?v45"></script>
+    <script src="js/audio.js?v45"></script>
+    <script src="js/dbmain.js?v45"></script>
+    <script src="js/filters.js?v45"></script>
+    <script src="js/controller.js?v45"></script>
+    <script src="js/control.js?v45"></script>
+    <script src="js/gamepad.js?v45"></script>
+    <script src="js/cheats.js?v45"></script>
+    <script src="music/music_config.js?v45"></script>
+    <script src="js/custommusic.js?v45"></script>
+    <script src="js/ramview.js?v45"></script>
+    <script src="js/chrview.js?v45"></script>
+    <script src="js/CT2info.js?v45"></script>
+    <script src="js/savemanager.js?v45"></script>
+    <script src="js/ct2_tools.js?v45"></script>
+    <script src="js/nsfmapper.js?v45"></script>
+    <script src="js/nsf.js?v45"></script>
+    <script src="js/nsfmain.js?v45"></script>
+    <script src="js/nsfCT2edit.js?v45"></script>
+    <script src="js/nsfdebugpl.js?v45"></script>
+    <script src="js/nsfdebug.js?v45"></script>
+  <script src="js/hackct2-integration.js?v=43"></script>
+    <script>
+      function openAshackRom() {
+        this.nes.mapper._virtuaNESHack = true;
+        this.nes.reset();
+        log("已经开启,并自动重新载ROM.", "hackMMC3");
+      }
+
+      document.getElementById('debugViewSelect').onchange = function () {
+        if (!loaded) return;
+        db.setView(parseInt(this.value));
+      };
+
+      // 初始化所有UI事件
+      initUIEvents();
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NSF to JS Converter</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .button {
+            display: inline-block;
+            padding: 12px 24px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+            transition: background-color 0.3s;
+        }
+        .button:hover {
+            background-color: #45a049;
+        }
+        .button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .file-info {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-radius: 4px;
+            border-left: 4px solid #4CAF50;
+        }
+        .progress {
+            margin: 20px 0;
+            display: none;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background-color: #f0f0f0;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background-color: #4CAF50;
+            width: 0%;
+            transition: width 0.3s;
+        }
+        .status {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 4px;
+            display: none;
+        }
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status.info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .code-preview {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f8f8f8;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+            display: none;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+    <h1>文件到 JavaScript 转换器 (10进制格式)</h1>
+
+    <p>将支持的音乐/声卡/卡带等文件转换为 JavaScript 数组格式（10进制），支持批量转换和合并。</p>
+
+        <div style="margin-bottom: 15px;">
+            <label style="display: flex; align-items: center; gap: 8px;">
+                <input type="checkbox" id="mergeFiles" checked>
+                <span>合并到单个JS文件</span>
+            </label>
+        </div>
+
+    <button id="selectFileBtn" class="button">选择文件 (支持多选)</button>
+    <!-- 支持多种常见音频/游戏音频格式 -->
+    <input type="file" id="fileInput" accept=".nsf,.nsfe,.spc,.vgm,.vgz,.gym,.gbs,.ay,.hes,.sap,.kss" multiple class="hidden">
+
+        <button id="loadJsBtn" class="button">加载JS文件</button>
+        <input type="file" id="jsFileInput" accept=".js" class="hidden">
+
+        <div id="fileInfo" class="file-info hidden">
+            <strong>文件信息：</strong><br>
+            <span id="fileName"></span><br>
+            <span id="fileSize"></span><br>
+            <span id="fileType"></span>
+        </div>
+
+        <div id="progress" class="progress">
+            <div class="progress-bar">
+                <div id="progressFill" class="progress-fill"></div>
+            </div>
+            <div id="progressText">处理中...</div>
+        </div>
+
+        <div id="status" class="status"></div>
+
+        <div id="codePreview" class="code-preview"></div>
+
+        <button id="convertBtn" class="button hidden" disabled>转换并保存</button>
+        <button id="resetBtn" class="button hidden">重新选择</button>
+    </div>
+
+    <script>
+        let selectedFiles = [];
+        let fileDataMap = new Map(); // 文件名 -> 数据映射
+        let loadedJsData = null; // 加载的JS数据 {variables: Map<name, data>, originalFile: string}
+        let isJsMode = false; // 是否处于JS加载模式
+
+        // DOM元素
+        const selectFileBtn = document.getElementById('selectFileBtn');
+        const fileInput = document.getElementById('fileInput');
+        const loadJsBtn = document.getElementById('loadJsBtn');
+        const jsFileInput = document.getElementById('jsFileInput');
+        const mergeCheckbox = document.getElementById('mergeFiles');
+        const fileInfo = document.getElementById('fileInfo');
+        const fileName = document.getElementById('fileName');
+        const fileSize = document.getElementById('fileSize');
+        const fileType = document.getElementById('fileType');
+        const progress = document.getElementById('progress');
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
+        const status = document.getElementById('status');
+        const codePreview = document.getElementById('codePreview');
+        const convertBtn = document.getElementById('convertBtn');
+        const resetBtn = document.getElementById('resetBtn');
+
+        // 绑定事件
+        selectFileBtn.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        loadJsBtn.addEventListener('click', () => {
+            jsFileInput.click();
+        });
+
+        fileInput.addEventListener('change', handleFileSelect);
+        jsFileInput.addEventListener('change', handleJsFileSelect);
+        convertBtn.addEventListener('click', convertAndSave);
+        resetBtn.addEventListener('click', reset);
+        mergeCheckbox.addEventListener('change', () => {
+            if (selectedFiles.length > 0 || loadedJsData) {
+                generatePreview();
+            }
+        });
+
+        function handleFileSelect(event) {
+            const files = Array.from(event.target.files);
+            if (files.length === 0) return;
+
+            if (isJsMode && loadedJsData) {
+                // JS模式：添加更多文件到现有数据
+                showStatus('正在添加更多NSF文件...', 'info');
+                progress.style.display = 'block';
+                progressFill.style.width = '0%';
+                progressText.textContent = '读取文件中...';
+
+                let processed = 0;
+                const total = files.length;
+
+                files.forEach(file => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const arrayBuffer = e.target.result;
+                        const uint8Array = new Uint8Array(arrayBuffer);
+                        fileDataMap.set(file.name, uint8Array);
+
+                        processed++;
+                        progressFill.style.width = `${(processed / total) * 100}%`;
+                        progressText.textContent = `已添加 ${processed}/${total} 个文件`;
+
+                        if (processed === total) {
+                            // 添加到selectedFiles列表
+                            selectedFiles.push(...files);
+
+                            progress.style.display = 'none';
+                            generatePreview();
+                            showStatus(`已添加 ${total} 个NSF文件到合并列表中`, 'success');
+                        }
+                    };
+
+                    reader.onerror = () => {
+                        showStatus(`读取文件 ${file.name} 失败！`, 'error');
+                        progress.style.display = 'none';
+                    };
+
+                    reader.readAsArrayBuffer(file);
+                });
+            } else {
+                // 正常NSF模式：替换现有选择
+                selectedFiles = files;
+                fileDataMap.clear();
+                loadedJsData = null;
+                isJsMode = false;
+
+                showStatus('正在读取NSF文件...', 'info');
+                progress.style.display = 'block';
+                progressFill.style.width = '0%';
+                progressText.textContent = '读取文件中...';
+
+                let processed = 0;
+                const total = files.length;
+
+                files.forEach(file => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const arrayBuffer = e.target.result;
+                        const uint8Array = new Uint8Array(arrayBuffer);
+                        fileDataMap.set(file.name, uint8Array);
+
+                        processed++;
+                        progressFill.style.width = `${(processed / total) * 100}%`;
+                        progressText.textContent = `已处理 ${processed}/${total} 个文件`;
+
+                        if (processed === total) {
+                            // 所有文件处理完成
+                            const totalSize = Array.from(fileDataMap.values()).reduce((sum, data) => sum + data.length, 0);
+
+                            fileName.textContent = `已选择 ${files.length} 个NSF文件`;
+                            fileSize.textContent = `总大小: ${formatFileSize(totalSize)}`;
+                            fileType.textContent = `文件列表: ${files.map(f => f.name).join(', ')}`;
+
+                            fileInfo.classList.remove('hidden');
+                            convertBtn.classList.remove('hidden');
+                            convertBtn.disabled = false;
+                            resetBtn.classList.remove('hidden');
+
+                            progress.style.display = 'none';
+                            generatePreview();
+                            showStatus('NSF文件加载完成，可以进行转换。', 'success');
+                        }
+                    };
+
+                    reader.onerror = () => {
+                        showStatus(`读取文件 ${file.name} 失败！`, 'error');
+                        progress.style.display = 'none';
+                    };
+
+                    reader.readAsArrayBuffer(file);
+                });
+            }
+        }
+
+        function handleJsFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            showStatus('正在解析JS文件...', 'info');
+            progress.style.display = 'block';
+            progressFill.style.width = '0%';
+            progressText.textContent = '解析JS文件中...';
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const jsContent = e.target.result;
+                    const parsedData = parseJsFile(jsContent, file.name);
+
+                    if (parsedData.variables.size === 0) {
+                        showStatus('JS文件中没有找到有效的NSF数据变量！', 'error');
+                        progress.style.display = 'none';
+                        return;
+                    }
+
+                    loadedJsData = {
+                        variables: parsedData.variables,
+                        originalFile: file.name,
+                        jsContent: jsContent
+                    };
+                    isJsMode = true;
+                    selectedFiles = []; // 清空NSF文件选择
+                    fileDataMap.clear();
+
+                    // 显示文件信息
+                    const varNames = Array.from(parsedData.variables.keys());
+                    const totalSize = Array.from(parsedData.variables.values()).reduce((sum, data) => sum + data.length, 0);
+
+                    fileName.textContent = `JS文件: ${file.name}`;
+                    fileSize.textContent = `包含 ${varNames.length} 个变量，总大小: ${formatFileSize(totalSize)}`;
+                    fileType.textContent = `变量: ${varNames.join(', ')}`;
+
+                    fileInfo.classList.remove('hidden');
+                    convertBtn.classList.remove('hidden');
+                    convertBtn.disabled = false;
+                    resetBtn.classList.remove('hidden');
+
+                    progressFill.style.width = '100%';
+                    progressText.textContent = 'JS文件解析完成';
+                    progress.style.display = 'none';
+
+                    generatePreview();
+                    showStatus('JS文件加载完成，可以查看和导出数据。', 'success');
+
+                } catch (error) {
+                    showStatus(`解析JS文件失败: ${error.message}`, 'error');
+                    progress.style.display = 'none';
+                }
+            };
+
+            reader.onerror = () => {
+                showStatus('读取JS文件失败！', 'error');
+                progress.style.display = 'none';
+            };
+
+            reader.readAsText(file);
+        }
+
+        function addMoreFiles() {
+            fileInput.click();
+        }
+
+        function parseJsFile(jsContent, fileName) {
+            const variables = new Map();
+
+            // 支持多种声明形式：var/let/const 变量名 = [..] 或 = new Uint8Array([..]) 或 = Uint8Array([..])
+            // 允许 Unicode 字母（包括中文）、数字、下划线和 $，使用 Unicode 属性转义
+            const varRegex = /(?:var|let|const)\s+([\p{L}\p{N}_$]+)\s*=\s*(?:new\s+Uint8Array\s*\(|Uint8Array\s*\()?\s*\[([\s\S]*?)\]\s*\)?/gu;
+            let match;
+
+            while ((match = varRegex.exec(jsContent)) !== null) {
+                const varName = match[1];
+                let arrayContent = match[2];
+
+                try {
+                    // 移除注释（/* */ 与 //）以避免解析干扰
+                    arrayContent = arrayContent.replace(/\/\*[\s\S]*?\*\//g, '');
+                    arrayContent = arrayContent.replace(/\/\/.*$/gm, '');
+
+                    // 拆分并解析数字，支持十进制与十六进制（例如 0xFF）
+                    const numbers = arrayContent.split(',').map(s => {
+                        const token = s.trim();
+                        if (token === '') return null;
+                        // 允许 0x.. 十六进制和普通数字
+                        const val = Number(token);
+                        return Number.isFinite(val) ? val & 0xFF : null;
+                    }).filter(n => n !== null && !isNaN(n));
+
+                    if (numbers.length > 0) {
+                        variables.set(varName, new Uint8Array(numbers));
+                    }
+                } catch (error) {
+                    console.warn(`解析变量 ${varName} 时出错:`, error);
+                }
+            }
+
+            return { variables };
+        }
+
+        function detectFileType(data) {
+            if (data.length < 4) return 'UNKNOWN';
+
+            // 检查文件头
+            const header = String.fromCharCode(...data.slice(0, 4));
+
+            if (header === 'NESM') return 'NSF';
+            if (header === 'NSFE') return 'NSFE';
+            if (header === 'SNES') return 'SPC';
+            if (header === 'Vgm ') return 'VGM';
+            if (header === 'Vgze') return 'VGZ';
+            if (header === 'GYMX') return 'GYM';
+            if (header === 'GBS ') return 'GBS';
+            if (header === 'HESM') return 'HES';
+            if (header === 'SAP\r') return 'SAP';
+            if (header === 'KSS\r') return 'KSS';
+
+            // AY 文件通常没有特定的文件头，通过扩展名识别
+            // 检查是否可能是 AY 文件（通常是二进制数据）
+            if (data.length > 0 && data.length < 10000) {
+                // AY 文件通常较小，这里做一个粗略的判断
+                return 'AY';
+            }
+
+            return 'UNKNOWN';
+        }
+
+        function exportVariable(varName) {
+            if (!loadedJsData || !loadedJsData.variables.has(varName)) {
+                showStatus('变量不存在！', 'error');
+                return;
+            }
+
+            const data = loadedJsData.variables.get(varName);
+            const fileType = detectFileType(data);
+            const extension = getFileExtension(fileType);
+
+            const blob = new Blob([data], { type: 'application/octet-stream' });
+            const url = URL.createObjectURL(blob);
+
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${varName}.${extension}`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            showStatus(`已导出 ${varName} 为 ${fileType} 文件`, 'success');
+        }
+
+        function getFileExtension(fileType) {
+            const extensions = {
+                'NSF': 'nsf',
+                'NSFE': 'nsfe',
+                'SPC': 'spc',
+                'VGM': 'vgm',
+                'VGZ': 'vgz',
+                'GYM': 'gym',
+                'GBS': 'gbs',
+                'AY': 'ay',
+                'HES': 'hes',
+                'SAP': 'sap',
+                'KSS': 'kss'
+            };
+            return extensions[fileType] || 'bin';
+        }
+
+        function generatePreview() {
+            if (isJsMode && loadedJsData) {
+                generateJsPreview();
+            } else if (selectedFiles.length > 0) {
+                generateNsfPreview();
+            }
+        }
+
+        function generateJsPreview() {
+            const variables = new Map(loadedJsData.variables);
+            let html = `<div style="margin-bottom: 20px;"><strong>JS文件内容预览 (${loadedJsData.originalFile}):</strong></div>`;
+
+            html += `<div style="margin-bottom: 15px;">`;
+            html += `<button class="button" onclick="addMoreFiles()">添加更多NSF文件</button>`;
+            html += `</div>`;
+
+            // 显示原有变量
+            for (const [varName, data] of loadedJsData.variables) {
+                const fileType = detectFileType(data);
+                const fileSize = formatFileSize(data.length);
+
+                html += `<div style="border: 1px solid #ddd; padding: 10px; margin-bottom: 10px; border-radius: 4px;">`;
+                html += `<strong>变量: ${varName}</strong> <em>(原有)</em><br>`;
+                html += `大小: ${fileSize} | 类型: ${fileType}<br>`;
+                html += `数据预览: [${Array.from(data.slice(0, 16)).join(', ')}${data.length > 16 ? ', ...' : ''}]<br>`;
+                html += `<button class="button" style="margin-top: 5px;" onclick="exportVariable('${varName}')">导出为 ${fileType} 文件</button>`;
+                html += `</div>`;
+            }
+
+            // 显示新添加的文件
+            if (selectedFiles.length > 0) {
+                html += `<div style="margin: 20px 0; padding: 10px; background-color: #e8f5e8; border-radius: 4px;">`;
+                html += `<strong>新添加的文件:</strong>`;
+                html += `</div>`;
+
+                selectedFiles.forEach(file => {
+                    const data = fileDataMap.get(file.name);
+                    if (!data) return;
+
+                    const fileType = detectFileType(data);
+                    const fileSize = formatFileSize(data.length);
+                    const varName = sanitizeFileName(file.name.replace(/\.nsf$/i, ''));
+
+                    html += `<div style="border: 1px solid #4CAF50; padding: 10px; margin-bottom: 10px; border-radius: 4px; background-color: #f9fff9;">`;
+                    html += `<strong>变量: ${varName}</strong> <em>(新增)</em><br>`;
+                    html += `文件: ${file.name}<br>`;
+                    html += `大小: ${fileSize} | 类型: ${fileType}<br>`;
+                    html += `数据预览: [${Array.from(data.slice(0, 16)).join(', ')}${data.length > 16 ? ', ...' : ''}]<br>`;
+                    html += `</div>`;
+                });
+            }
+
+            codePreview.innerHTML = html;
+            codePreview.style.display = 'block';
+        }
+
+        function generateNsfPreview() {
+            if (selectedFiles.length === 0) return;
+
+            const isMerge = mergeCheckbox.checked;
+            let jsCode = `// NSF文件转换\n`;
+            jsCode += `// 生成时间: ${new Date().toLocaleString()}\n`;
+
+            if (isMerge) {
+                // 合并模式：所有文件在一个JS文件中
+                jsCode += `// 合并文件: ${selectedFiles.map(f => f.name).join(', ')}\n\n`;
+
+                selectedFiles.forEach(file => {
+                    const data = fileDataMap.get(file.name);
+                    if (!data) return;
+
+                    const sanitizedName = sanitizeFileName(file.name.replace(/\.nsf$/i, ''));
+                    const decArray = Array.from(data).map(byte => byte.toString());
+
+                    jsCode += `var ${sanitizedName} = [\n`;
+
+                    // 预览时只显示前几个数据
+                    const previewData = decArray.slice(0, Math.min(32, decArray.length));
+                    jsCode += `    ${previewData.join(',')}`;
+                    if (decArray.length > 32) {
+                        jsCode += ', // ... 还有更多数据';
+                    }
+                    jsCode += '\n';
+
+                    jsCode += '];\n\n';
+                });
+
+                jsCode += `// 使用示例:\n`;
+                selectedFiles.forEach(file => {
+                    const sanitizedName = sanitizeFileName(file.name.replace(/\.nsf$/i, ''));
+                    const data = fileDataMap.get(file.name);
+                    jsCode += `// console.log(${sanitizedName}.length); // ${data ? data.length : 0}\n`;
+                });
+            } else {
+                // 分离模式：显示所有文件的预览
+                jsCode += `// 分离模式: 每个文件将生成独立的JS文件\n\n`;
+
+                selectedFiles.forEach((file, index) => {
+                    const data = fileDataMap.get(file.name);
+                    if (!data) return;
+
+                    const sanitizedName = sanitizeFileName(file.name.replace(/\.nsf$/i, ''));
+                    const decArray = Array.from(data).map(byte => byte.toString());
+
+                    jsCode += `// 文件 ${index + 1}: ${file.name} → ${sanitizedName}.js\n`;
+                    jsCode += `// 大小: ${formatFileSize(file.size)}\n\n`;
+                    jsCode += `var ${sanitizedName} = [\n`;
+
+                    // 预览时只显示前几个数据
+                    const previewData = decArray.slice(0, Math.min(16, decArray.length));
+                    jsCode += `    ${previewData.join(',')}`;
+                    if (decArray.length > 16) {
+                        jsCode += ', // ... 还有更多数据';
+                    }
+                    jsCode += '\n';
+
+                    jsCode += '];\n\n';
+                    jsCode += `// 使用示例:\n`;
+                    jsCode += `// console.log(${sanitizedName}.length); // ${decArray.length}\n\n`;
+                });
+            }
+
+            codePreview.textContent = jsCode;
+            codePreview.style.display = 'block';
+        }
+
+        function convertAndSave() {
+            if (isJsMode && loadedJsData) {
+                // JS模式：重新生成合并的JS文件（包含原有变量和新添加的文件）
+                convertJsMergedFile();
+            } else if (selectedFiles.length === 0) {
+                showStatus('没有可转换的文件！', 'error');
+                return;
+            } else {
+                const isMerge = mergeCheckbox.checked;
+
+                if (isMerge) {
+                    // 合并模式：所有文件合并到一个JS文件中
+                    convertMergedFile();
+                } else {
+                    // 分离模式：每个文件生成独立的JS文件
+                    convertSeparateFiles();
+                }
+            }
+        }
+
+        function convertJsMergedFile() {
+            let jsCode = `// NSF文件批量转换 (合并)\n`;
+            jsCode += `// 生成时间: ${new Date().toLocaleString()}\n`;
+            jsCode += `// 原始JS文件: ${loadedJsData.originalFile}\n`;
+
+            const allVariables = new Map(loadedJsData.variables);
+
+            // 添加新选择的NSF文件
+            selectedFiles.forEach(file => {
+                const data = fileDataMap.get(file.name);
+                if (!data) return;
+
+                const sanitizedName = sanitizeFileName(file.name.replace(/\.nsf$/i, ''));
+                allVariables.set(sanitizedName, data);
+            });
+
+            jsCode += `// 文件列表: ${Array.from(allVariables.keys()).join(', ')}\n\n`;
+
+            for (const [varName, data] of allVariables) {
+                const decArray = Array.from(data).map(byte => byte.toString());
+                jsCode += `var ${varName} = [\n`;
+                jsCode += `    ${decArray.join(',')}\n`;
+                jsCode += '];\n\n';
+            }
+
+            jsCode += `// 使用示例:\n`;
+            for (const [varName, data] of allVariables) {
+                jsCode += `// console.log(${varName}.length); // ${data.length}\n`;
+            }
+
+            // 创建Blob并下载
+            const blob = new Blob([jsCode], { type: 'application/javascript' });
+            const url = URL.createObjectURL(blob);
+
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'nsf_batch_merged_updated.js';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            showStatus(`更新后的合并文件已保存为 nsf_batch_merged_updated.js`, 'success');
+        }
+
+        function convertMergedFile() {
+            let jsCode = `// NSF文件批量转换 (合并)\n`;
+            jsCode += `// 生成时间: ${new Date().toLocaleString()}\n`;
+            jsCode += `// 文件列表: ${selectedFiles.map(f => f.name).join(', ')}\n\n`;
+
+            selectedFiles.forEach(file => {
+                const data = fileDataMap.get(file.name);
+                if (!data) return;
+
+                const sanitizedName = sanitizeFileName(file.name.replace(/\.nsf$/i, ''));
+                const decArray = Array.from(data).map(byte => byte.toString());
+
+                jsCode += `var ${sanitizedName} = [\n`;
+
+                // 所有数据在一行
+                jsCode += `    ${decArray.join(',')}\n`;
+
+                jsCode += '];\n\n';
+            });
+
+            jsCode += `// 使用示例:\n`;
+            selectedFiles.forEach(file => {
+                const sanitizedName = sanitizeFileName(file.name.replace(/\.nsf$/i, ''));
+                const data = fileDataMap.get(file.name);
+                jsCode += `// console.log(${sanitizedName}.length); // ${data ? data.length : 0}\n`;
+            });
+
+            // 创建Blob并下载
+            const blob = new Blob([jsCode], { type: 'application/javascript' });
+            const url = URL.createObjectURL(blob);
+
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'nsf_batch_merged.js';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            showStatus(`合并文件已保存为 nsf_batch_merged.js`, 'success');
+        }
+
+        function convertSeparateFiles() {
+            let completed = 0;
+            const total = selectedFiles.length;
+
+            selectedFiles.forEach(file => {
+                const data = fileDataMap.get(file.name);
+                if (!data) {
+                    completed++;
+                    return;
+                }
+
+                const sanitizedName = sanitizeFileName(file.name.replace(/\.nsf$/i, ''));
+                const decArray = Array.from(data).map(byte => byte.toString());
+
+                // 生成JavaScript代码
+                let jsCode = `// NSF文件: ${file.name}\n`;
+                jsCode += `// 生成时间: ${new Date().toLocaleString()}\n`;
+                jsCode += `// 文件大小: ${formatFileSize(file.size)}\n\n`;
+                jsCode += `var ${sanitizedName} = [\n`;
+
+                // 所有数据在一行
+                jsCode += `    ${decArray.join(',')}\n`;
+
+                jsCode += '];\n\n';
+                jsCode += `// 使用示例:\n`;
+                jsCode += `// console.log(${sanitizedName}.length); // ${decArray.length}\n`;
+
+                // 创建Blob并下载
+                const blob = new Blob([jsCode], { type: 'application/javascript' });
+                const url = URL.createObjectURL(blob);
+
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${sanitizedName}.js`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                completed++;
+                if (completed === total) {
+                    showStatus(`已生成 ${total} 个JS文件`, 'success');
+                }
+            });
+        }
+
+        function reset() {
+            selectedFiles = [];
+            fileDataMap.clear();
+            loadedJsData = null;
+            isJsMode = false;
+
+            fileInput.value = '';
+            jsFileInput.value = '';
+            fileInfo.classList.add('hidden');
+            progress.style.display = 'none';
+            status.style.display = 'none';
+            codePreview.style.display = 'none';
+            convertBtn.classList.add('hidden');
+            convertBtn.disabled = true;
+            resetBtn.classList.add('hidden');
+        }
+
+        function showStatus(message, type) {
+            status.textContent = message;
+            status.className = `status ${type}`;
+            status.style.display = 'block';
+        }
+
+        function sanitizeFileName(fileName) {
+            // 将文件名转换为有效的JavaScript变量名，支持中文字符
+            // 1. 将特殊字符（除字母、数字、下划线、美元符号、中文字符外）替换为下划线
+            let sanitized = fileName.replace(/[^\w$\u4e00-\u9fff]/g, '_');
+
+            // 2. 确保以字母、下划线或中文字符开头（不能以数字开头）
+            if (/^[0-9]/.test(sanitized)) {
+                sanitized = 'nsf_' + sanitized;
+            }
+
+            // 3. 如果为空或只包含下划线，返回默认名称
+            if (!sanitized || /^_+$/.test(sanitized)) {
+                sanitized = 'nsf_data';
+            }
+
+            // 4. 移除连续的下划线
+            sanitized = sanitized.replace(/_+/g, '_');
+
+            // 5. 移除开头和结尾的下划线（除非整个字符串都是下划线）
+            sanitized = sanitized.replace(/^_+|_+$/g, '');
+
+            // 6. 如果处理后为空，返回默认名称
+            if (!sanitized) {
+                sanitized = 'nsf_data';
+            }
+
+            return sanitized;
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+    </script>
+</body>
+</html>
