@@ -92,6 +92,17 @@
       menuClose.removeAttribute('hidden');
     }
     lockScroll();
+    // 没有已展开的分组时，默认展开第一个（文件），方便直接选游戏加载
+    if (!menuDropdown.querySelector('.menu-group.open')) {
+      var firstGroup = menuDropdown.querySelector('.menu-group');
+      var firstToggle = firstGroup && firstGroup.querySelector('.menu-group-toggle');
+      var firstContent = firstGroup && firstGroup.querySelector('.group-content');
+      if (firstGroup && firstToggle && firstContent) {
+        firstGroup.classList.add('open');
+        firstToggle.setAttribute('aria-expanded', 'true');
+        firstContent.hidden = false;
+      }
+    }
     lastFocusedElement = document.activeElement;
     var focusTarget = menuDropdown.querySelector('.menu-group-toggle, .menu-action, button, input, select');
     focusElement(focusTarget);
@@ -490,6 +501,19 @@
         targetH = Math.round(w / aspect);
       }
     }
+    // 画面设置（更多设置）：'43'=按老 CRT 电视的 4:3 比例显示。
+    // 窗口比 4:3 宽（横屏）：高度铺满、宽度按 4:3（横向轻拉伸，左右窄黑边）；
+    // 窗口比 4:3 窄（竖屏）：宽度铺满、高度按 4:3。
+    if ((window.displayMode || 'default') === 'crt43') {
+      var aspect43 = 4 / 3;
+      if (w / h > aspect43) {
+        targetH = h;
+        targetW = Math.round(h * aspect43);
+      } else {
+        targetW = w;
+        targetH = Math.round(w / aspect43);
+      }
+    }
     // 根据 highDpiMode 决定物理像素放大倍数（整数）
     var effectiveDpr = 1;
     if (window.highDpiMode) {
@@ -572,6 +596,8 @@
       closeBtn.onclick = function () {
         let wrapper = document.getElementById('wrapper');
         if (wrapper) wrapper.style.display = 'none';
+        // 面板关闭后停止访问记录，让模拟器回到快路径
+        if (window.db) window.db.trackAccess = false;
       };
     }
 

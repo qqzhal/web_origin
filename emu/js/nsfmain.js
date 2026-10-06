@@ -787,14 +787,14 @@ function hideNesUiForNsf() {
     nsfKeyBound = true;
 
     function getKeyMap() {
-      if (window.keyMap) return window.keyMap;
+      if (typeof keyMap !== 'undefined' && keyMap) return keyMap;
       return {
-        1: { up: 'w', down: 's', left: 'a', right: 'd', select: 'f', start: 'g', b: 'k', a: 'j' },
+        1: { up: 'w', down: 's', left: 'a', right: 'd', select: 'g', start: 'h', b: 'k', a: 'l' },
         2: { up: '↑', down: '↓', left: '←', right: '→', select: '7', start: '8', b: '4', a: '5' }
       };
     }
     function getNesButtonMap() {
-      if (window.nesButtonMap) return window.nesButtonMap;
+      if (typeof nesButtonMap !== 'undefined' && nesButtonMap) return nesButtonMap;
       return { a: 'A', b: 'B', select: 'SELECT', start: 'START', up: 'UP', down: 'DOWN', left: 'LEFT', right: 'RIGHT' };
     }
 

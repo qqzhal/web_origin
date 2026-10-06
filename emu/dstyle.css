@@ -422,13 +422,28 @@ body:not(.simulator) .cheat-dialog {
   box-shadow: 0 2px 8px #8882;
 }
 
-/* 透明按钮点击反馈（非编辑模式下） */
+/* 透明按钮点击反馈（非编辑模式下）
+   按下增亮改用白色覆盖层 + opacity 过渡（合成器路径），避免 filter/drop-shadow
+   在长按期间持续触发昂贵的重绘——按钮叠在每帧更新的画布上方，开销会被放大 */
+.transparent-button:not(.transp-editing)::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: rgba(255,255,255,0.45);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.08s;
+}
+.transparent-button:not(.transp-editing):active::after,
+.transparent-button.transp-pressed::after {
+  opacity: 1;
+}
 .transparent-button:not(.transp-editing):active,
 .transparent-button.transp-pressed {
-  filter: brightness(1.7) drop-shadow(0 0 8px #fff8);
   box-shadow: 0 0 12px #fff8, 0 2px 8px #0004;
   border-color: #4af;
-  transition: filter 0.08s, box-shadow 0.08s, border-color 0.08s;
+  transition: box-shadow 0.08s, border-color 0.08s;
 }
 
 /* 十字键方向高亮动画（非编辑模式下） */
@@ -441,7 +456,6 @@ body:not(.simulator) .cheat-dialog {
 }
 .transp-btn-dpad .dpad-dir-highlight.active {
   opacity: 1;
-  filter: brightness(2.2) drop-shadow(0 0 12px #fff);
 }
 
 /* 编辑模式下不显示点击/高亮动画 */
@@ -652,3 +666,4 @@ button:hover {
   background-color: var(--scrollbar-thumb-hover);
 }
 
+#statusBar{display: none !important;} /* 对模拟器熟悉，也不需要NSF播放器，所以不需要顶部提示 */

@@ -481,6 +481,8 @@ mappers[4] = function (nes, rom, header) {
   this.setHackState = function (state) {
     this.saveVars.forEach(name => {
       if (name === "prgExtRam") return; // 后续处理
+      // 旧版本存档可能缺少新加入的字段：跳过，保留当前值
+      if (state[name] === undefined) return;
       let val = this[name];
       if (val instanceof Uint8Array) {
         this[name] = new Uint8Array(state[name]);

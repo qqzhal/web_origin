@@ -953,6 +953,26 @@ Cpu = (function () {
     this.jam = function (adr) {
       // JAM
       this.br[PC]--;
+      // [调试钩子] 执行到非法停机指令=游戏代码跳飞的第一现场：
+      // 记录 PC/寄存器和栈上残留的返回地址链，供定位跳飞来源。只记第一次。
+      try {
+        if (typeof window !== 'undefined' && window.__jamTrap === undefined) {
+          const chain = [];
+          let p = (this.r[3] + 1) & 0xff;
+          for (let i = 0; i < 32; i++) {
+            const lo = this.safeRead(0x0100 + p);
+            const hi = this.safeRead(0x0100 + ((p + 1) & 0xff));
+            chain.push((hi << 8) | lo);
+            p = (p + 2) & 0xff;
+          }
+          window.__jamTrap = { // window.__jamTrap——包括 PC、A/X/Y/SP 和栈上 32 个残留返回地址（跳飞瞬间的调用链）。
+            pc: this.br[PC],
+            a: this.r[0], x: this.r[1], y: this.r[2], sp: this.r[3],
+            stack: chain,
+            time: new Date().toLocaleTimeString()
+          };
+        }
+      } catch (e) { /* 忽略钩子异常，不影响模拟 */ }
     }
 
     this.uni = function (eff, instr) {

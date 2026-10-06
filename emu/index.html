@@ -4,9 +4,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <link rel="stylesheet" type="text/css" href="dstyle.css?v45">
-  <link rel="stylesheet" type="text/css" href="css/gamepad.css?v45">
-    <link rel="stylesheet" type="text/css" href="css/menus.css?v45">
+  <link rel="stylesheet" type="text/css" href="dstyle.css?v=ab6503e6">
+  <link rel="stylesheet" type="text/css" href="css/gamepad.css?v=8a928853">
+    <link rel="stylesheet" type="text/css" href="css/menus.css?v=4df8eaba">
   <title>NesJS_for Hack CT2 web</title>
 </head>
 
@@ -14,9 +14,9 @@
   <!-- 新增全屏容器 -->
   <div id="fullscreenContainer" style="position:relative;">
     <div id="statusBar" class="status-bar"
-      style="width:100%;white-space:pre-wrap;word-break:break-all;margin:0;padding:0;line-height:1.3; display:flex; align-items:center; justify-content:center; position:relative;">
+      style="width:100%;white-space:pre-wrap;word-break:break-all;margin:0;padding:0;line-height:1.3; display:none; align-items:center; justify-content:center; position:relative;">
       <pre id="nesornsf"
-        style="width:100%;white-space:pre-wrap;word-break:break-all;margin:0;padding:0;line-height:1.3;text-align:center;display:block;">控制器按键-可拖拽nes/nsf/zip文件到网页中 AB按钮=JK 上下左右=WSAD 选择=F开始=G 快速存读档 12,存档列表3,重启F1 点击我可以切换NSF/NES模式 <button id="statusBarClose" class="status-bar-close">X</button></pre>
+        style="width:100%;white-space:pre-wrap;word-break:break-all;margin:0;padding:0;line-height:1.3;text-align:center;display:block;">控制器按键-可拖拽nes/nsf/zip文件到网页中 AB按钮=KL 上下左右=WSAD 选择=F开始=G 快速存读档 12,存档列表3,重启F1,加速档 小键盘+/- 点击我可以切换NSF/NES模式 <button id="statusBarClose" class="status-bar-close">X</button></pre>
 
     </div>
     <canvas id="output"></canvas>
@@ -43,7 +43,21 @@
           <li class="menu-group">
             <button class="menu-group-toggle" type="button" aria-expanded="false">文件</button>
             <div class="group-content" hidden>
-              <input id="rom" type="file">
+              <div class="rom-upload" id="romUpload">
+                <input id="rom" type="file" class="rom-upload-input" accept=".nes,.nsf,.zip">
+                <label for="rom" class="rom-upload-area">
+                  <svg class="rom-upload-icon" viewBox="0 0 24 24" width="30" height="30" fill="none"
+                    stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                    aria-hidden="true">
+                    <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"></path>
+                    <polyline points="7 9 12 4 17 9"></polyline>
+                    <line x1="12" y1="4" x2="12" y2="16"></line>
+                  </svg>
+                  <span class="rom-upload-title">选择游戏文件</span>
+                  <span class="rom-upload-hint">支持 .nes / .nsf / .zip，也可直接拖拽到页面</span>
+                </label>
+              </div>
+              <div id="onlineGamesList" style="margin-top:10px;"></div>
             </div>
           </li>
           <li class="menu-group">
@@ -136,6 +150,30 @@
 勾选“高DPI 模式”可在高分屏上使用更多物理像素提高清晰度（会使用额外的显存），刷新页面后生效；<br>
 切换渲染模式2d/webgl会强制刷新页面。</div>
 设置会保存到localStorage<br>
+            </div>
+          </li>
+          <li class="menu-group">
+            <button class="menu-group-toggle" type="button" aria-expanded="false">更多设置</button>
+            <div class="group-content" hidden>
+              <div class="row">
+                <div class="label">画面设置:</div>
+                <select id="displayModeSelect">
+                  <option value="default">默认</option>
+                  <option value="crt43">4:3（老电视）</option>
+                </select>
+              </div>
+              <div class="row">
+                <div class="label">游戏开始载入自动存档:</div>
+                <select id="autoSaveLoadSelect">
+                  <option value="ask">询问载入</option>
+                  <option value="auto">自动载入</option>
+                  <option value="never">不载入</option>
+                </select>
+              </div>
+              <div class="row"><label style="margin-left:0;"><input type="checkbox" id="disableAutoSaveCheckbox">取消自动存档</label></div>
+              <div class="row"><label style="margin-left:0;"><input type="checkbox" id="muteAudioCheckbox">静音</label></div>
+              <div class="row"><label style="margin-left:0;"><input type="checkbox" id="loadRamWatchCheckbox">加载 RAM 监视 (ramwatch)</label></div>
+              <div class="row"><label style="margin-left:0;"><input type="checkbox" id="loadRecorderCheckbox">加载 CT2 采集 (ct2_recorder)</label></div>
             </div>
           </li>
           <li class="menu-group">
@@ -247,37 +285,39 @@
 
       </div>
     </div>
-    <script src="js/afunction.js?v45"></script>
-    <script src="lib/zip.js?v45"></script>
-    <script src="lib/inflate.js?v45"></script>
-    <script src="nes/mappers.js?v45"></script>
-    <script src="nes/cpu.js?v45"></script>
-    <script src="nes/pipu.js?v45"></script>
-    <script src="nes/apu.js?v45"></script>
-    <script src="mappers/ApuEX/loader.js?v45"></script>
-    <script src="nes/nes.js?v45"></script>
-    <script src="js/debugger.js?v45"></script>
-    <script src="js/audio.js?v45"></script>
-    <script src="js/dbmain.js?v45"></script>
-    <script src="js/filters.js?v45"></script>
-    <script src="js/controller.js?v45"></script>
-    <script src="js/control.js?v45"></script>
-    <script src="js/gamepad.js?v45"></script>
-    <script src="js/cheats.js?v45"></script>
-    <script src="music/music_config.js?v45"></script>
-    <script src="js/custommusic.js?v45"></script>
-    <script src="js/ramview.js?v45"></script>
-    <script src="js/chrview.js?v45"></script>
-    <script src="js/CT2info.js?v45"></script>
-    <script src="js/savemanager.js?v45"></script>
-    <script src="js/ct2_tools.js?v45"></script>
-    <script src="js/nsfmapper.js?v45"></script>
-    <script src="js/nsf.js?v45"></script>
-    <script src="js/nsfmain.js?v45"></script>
-    <script src="js/nsfCT2edit.js?v45"></script>
-    <script src="js/nsfdebugpl.js?v45"></script>
-    <script src="js/nsfdebug.js?v45"></script>
-  <script src="js/hackct2-integration.js?v=43"></script>
+    <script src="js/afunction.js?v=c53d59ce"></script>
+    <script src="lib/zip.js?v=3628e1a1"></script>
+    <script src="lib/inflate.js?v=fd952b26"></script>
+    <script src="nes/mappers.js?v=b0d6a2c6"></script>
+    <script src="nes/cpu.js?v=87679fa8"></script>
+    <script src="nes/pipu.js?v=77bd45f0"></script>
+    <script src="nes/apu.js?v=da3bdad8"></script>
+    <script src="mappers/ApuEX/loader.js?v=a4ed9257"></script>
+    <script src="nes/nes.js?v=1753a463"></script>
+    <script src="js/debugger.js?v=54b59e20"></script>
+    <script src="js/audio.js?v=d196caee"></script>
+    <script src="js/dbmain.js?v=be448a56"></script>
+    <script src="js/filters.js?v=4ed60d4d"></script>
+    <script src="js/controller.js?v=c2d8a57a"></script>
+    <script src="js/control.js?v=b37c58de"></script>
+    <script src="js/gamepad.js?v=2afb0aac"></script>
+    <script src="js/cheats.js?v=aea253b8"></script>
+    <script src="music/music_config.js?v=399dea43"></script>
+    <script src="js/custommusic.js?v=93852b68"></script>
+    <script src="js/ramview.js?v=378eaf7f"></script>
+    <script src="js/chrview.js?v=4c20bce4"></script>
+    <script src="js/CT2info.js?v=ede54a17"></script>
+    <script src="js/savemanager.js?v=df2e929d"></script>
+    <script src="js/quickbar.js?v=5982bf1e"></script>
+    <script src="js/ct2_tools.js?v=4a516fad"></script>
+    <script src="js/nsfmapper.js?v=fad07ba0"></script>
+    <script src="js/nsf.js?v=84418434"></script>
+    <script src="js/nsfmain.js?v=6cbcf95d"></script>
+    <script src="js/nsfCT2edit.js?v=8b7c0d08"></script>
+    <script src="js/nsfdebugpl.js?v=ce358524"></script>
+    <script src="js/nsfdebug.js?v=ce30a4ed"></script>
+  <script src="js/hackct2-integration.js?v=7cef1876"></script>
+    <script src="js/cachemanager.js?v=399d115b"></script>
     <script>
       function openAshackRom() {
         this.nes.mapper._virtuaNESHack = true;

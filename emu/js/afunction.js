@@ -1,22 +1,39 @@
-function initIndexedDB() {
+// 打开 GameSavesDB 并确保 RomStore 存在。
+// 库已存在但缺 RomStore 时（历史遗留的空库），open 带相同版本号不会触发
+// onupgradeneeded，必须升一版重开强制升级，否则 transaction 会报 object store 不存在。
+function openGameSavesDB() {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open('GameSavesDB', 1);
-
-    request.onupgradeneeded = function (event) {
+    function hook(req) {
+      req.onupgradeneeded = function (event) {
+        const db = event.target.result;
+        if (!db.objectStoreNames.contains('RomStore')) {
+          db.createObjectStore('RomStore', { keyPath: 'id' });
+        }
+      };
+      return req;
+    }
+    // 不带版本号探测打开：库不存在时同样会走升级建表
+    const probe = hook(indexedDB.open('GameSavesDB'));
+    probe.onsuccess = function (event) {
       const db = event.target.result;
-      if (!db.objectStoreNames.contains('RomStore')) {
-        db.createObjectStore('RomStore', { keyPath: 'id' });
+      if (db.objectStoreNames.contains('RomStore')) {
+        resolve(db);
+        return;
       }
+      const next = db.version + 1;
+      db.close();
+      const req = hook(indexedDB.open('GameSavesDB', next));
+      req.onsuccess = (ev) => resolve(ev.target.result);
+      req.onerror = () => reject('IndexedDB 初始化失败: ' + (event.target.errorCode || ''));
     };
-
-    request.onsuccess = function (event) {
-      resolve(event.target.result);
-    };
-
-    request.onerror = function (event) {
+    probe.onerror = function (event) {
       reject('IndexedDB 初始化失败: ' + event.target.errorCode);
     };
   });
+}
+
+function initIndexedDB() {
+  return openGameSavesDB();
 }
 
 
@@ -192,8 +209,8 @@ function loadgame() {
         // 设置标题栏
         document.title = romName;
         // 隐藏文件选择
-        const romInput = document.getElementById('rom');
-        if (romInput) romInput.style.display = 'none';
+        const romUpload = document.getElementById('romUpload');
+        if (romUpload) romUpload.style.display = 'none';
       };
       transaction.onerror = function () {
         alert("无法识别游戏文件\nUnable to recognize game file.");
@@ -235,8 +252,8 @@ if (location.search.indexOf('debug=true') !== -1 || location.search.indexOf('rom
               db.loadRom(new Uint8Array(buffer), romName);
             }
             document.title = romName;
-            const romInput = document.getElementById('rom');
-            if (romInput) romInput.style.display = 'none';
+            const romUpload = document.getElementById('romUpload');
+            if (romUpload) romUpload.style.display = 'none';
           })
           .catch(err => {
             alert(`加载游戏文件失败: ${err.message}`);
@@ -591,6 +608,7 @@ function initDebugPanelLogic() {
     if (!loaded) {
       log("请载入游戏后再使用调试功能!", "debug");
       wrapper.style.display = 'none';
+      if (window.db) window.db.trackAccess = false;
       return;
     }
     if (wrapper.style.display === 'none' || wrapper.style.display === '') {
@@ -601,8 +619,231 @@ function initDebugPanelLogic() {
       }
     } else {
       wrapper.style.display = 'none';
+      // 面板关闭后停止访问记录，让模拟器回到快路径
+      if (window.db) window.db.trackAccess = false;
     }
   };
+}
+
+// 加载在线游戏列表
+function initOnlineGames() {
+  var listBox = document.getElementById('onlineGamesList');
+  if (!listBox) return;
+  listBox.innerHTML = '';
+  loadCachedGames(listBox);
+}
+
+// 从 IndexedDB 读取之前缓存过的私有游戏，追加到在线列表
+function loadCachedGames(listBox) {
+  if (!listBox || typeof indexedDB === 'undefined') return;
+  openGameSavesDB().then(function (db) {
+    var tx = db.transaction(['RomStore'], 'readonly');
+    var store = tx.objectStore('RomStore');
+    var cursorReq = store.openCursor();
+    cursorReq.onsuccess = function (e) {
+      var cursor = e.target.result;
+      if (cursor) {
+        var rec = cursor.value;
+        if (rec && rec.data) {
+          addCachedGameButton(listBox, rec.id, rec.name || rec.id, rec.data);
+        }
+        cursor.continue();
+      } else if (listBox.childElementCount === 0) {
+        var emptyEl = document.createElement('div');
+        emptyEl.className = 'label';
+        emptyEl.style.cssText = 'margin:4px 0;';
+        emptyEl.textContent = '暂无缓存游戏';
+        listBox.appendChild(emptyEl);
+      }
+    };
+  }).catch(function (err) {
+    // IndexedDB 不可用或缺表时静默跳过缓存游戏
+  });
+}
+
+function addCachedGameButton(listBox, id, name, data) {
+  if (!listBox) return;
+  var itemBtn = document.createElement('button');
+  itemBtn.type = 'button';
+  itemBtn.textContent = name + ' (本地缓存)';
+  itemBtn.style.cssText = 'display:block;width:100%;margin:4px 0;text-align:left;';
+  itemBtn.addEventListener('click', function () {
+    var origText = itemBtn.textContent;
+    itemBtn.disabled = true;
+    itemBtn.textContent = '正在加载...';
+    window.currentGameFileName = name;
+    if (typeof audioHandler !== 'undefined' && audioHandler && typeof audioHandler.resume === 'function') {
+      audioHandler.resume();
+    }
+    if (window.loadRom) {
+      window.loadRom(new Uint8Array(data), name);
+    } else if (window.db && typeof db.loadRom === "function") {
+      db.loadRom(new Uint8Array(data), name);
+    }
+    document.title = name;
+    itemBtn.disabled = false;
+    itemBtn.textContent = origText;
+    closeMenuIfOpen();
+  });
+  listBox.appendChild(itemBtn);
+}
+
+function loadOnlineGame(game, btn) {
+  if (!game || !game.path) return;
+  var origText = game.name || game.path;
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '正在加载...';
+  }
+  var romUrl = game.path;
+  fetch(romUrl)
+    .then(function (res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.arrayBuffer();
+    })
+    .then(function (buffer) {
+      var name = game.name || getFileNameFromPath(game.path);
+      window.currentGameFileName = name;
+      if (typeof audioHandler !== 'undefined' && audioHandler && typeof audioHandler.resume === 'function') {
+        audioHandler.resume();
+      }
+      if (window.loadRom) {
+        window.loadRom(new Uint8Array(buffer), name);
+      } else if (window.db && typeof db.loadRom === "function") {
+        db.loadRom(new Uint8Array(buffer), name);
+      }
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = origText;
+      }
+      document.title = name;
+      closeMenuIfOpen();
+    })
+    .catch(function (err) {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = origText;
+      }
+      alert('加载在线游戏失败: ' + (err.message || err));
+    });
+}
+
+function getFileNameFromPath(path) {
+  var parts = String(path).split('/');
+  return decodeURIComponent(parts[parts.length - 1] || path);
+}
+
+function closeMenuIfOpen() {
+  var toggle = document.getElementById('menu-toggle');
+  if (toggle && toggle.classList.contains('active')) {
+    toggle.click();
+  }
+}
+
+// 初始化调试脚本开关（更多设置）：默认关闭；勾选后页面刷新时动态加载对应 hook 脚本。
+// 两个脚本均为自包含 IIFE（自带 waitNes 轮询与卸载逻辑），支持任意时机注入；
+// 开关切换仅记忆 localStorage，提示刷新后生效，避免运行时反复装卸内存写入钩子。
+function initHookScripts() {
+  const hookItems = [
+    { key: 'loadRamWatch', id: 'loadRamWatchCheckbox', src: 'hook/ramwatch.js?v=29cc54fd' },
+    { key: 'loadCt2Recorder', id: 'loadRecorderCheckbox', src: 'hook/ct2_recorder.js?v=359f7aaa' }
+  ];
+  hookItems.forEach(function (it) {
+    const cb = document.getElementById(it.id);
+    if (!cb) return;
+    let on = false;
+    try { on = localStorage.getItem(it.key) === '1'; } catch (e) {}
+    cb.checked = on;
+    if (on) {
+      const s = document.createElement('script');
+      s.src = it.src;
+      document.head.appendChild(s);
+    }
+    cb.addEventListener('change', function () {
+      try { localStorage.setItem(it.key, this.checked ? '1' : '0'); } catch (e) {}
+      log(this.checked ? '已启用 ' + it.src + '，刷新页面后加载' : '已停用 ' + it.src + '，刷新页面后不再加载', 'debug');
+    });
+  });
+}
+
+// 初始化静音开关
+// 实现：所有音频输出统一经过挂接在 AudioContext 上的静音 GainNode 再到扬声器
+// （见 audio.js 的 getMuteGainNode / applyAudioMute），勾选后 Web Audio 图层面
+// 增益立即归零，AudioWorklet / ScriptProcessor / GME 自定义音乐全链路覆盖，
+// 手机端后台节流时同样即时生效。
+function initMuteAudio() {
+  const muteCheckbox = document.getElementById('muteAudioCheckbox');
+  if (!muteCheckbox) return;
+
+  let muted = false;
+  try { muted = localStorage.getItem('muteAudio') === '1'; } catch (e) {}
+  muteCheckbox.checked = muted;
+  if (muted && typeof window.applyAudioMute === 'function') {
+    window.applyAudioMute(true);
+  }
+
+  muteCheckbox.addEventListener('change', function () {
+    const m = this.checked;
+    try { localStorage.setItem('muteAudio', m ? '1' : '0'); } catch (e) {}
+    if (typeof window.applyAudioMute === 'function') {
+      window.applyAudioMute(m);
+    }
+  });
+}
+
+// 初始化"取消自动存档"开关（更多设置）：默认不勾选，保持每 7 秒自动保存。
+// 勾选后不写入自动存档槽位，游戏中切换即时生效。
+function initDisableAutoSave() {
+  const cb = document.getElementById('disableAutoSaveCheckbox');
+  if (!cb) return;
+  let off = false;
+  try { off = localStorage.getItem('disableAutoSave') === '1'; } catch (e) {}
+  cb.checked = off;
+  window.disableAutoSave = off;
+  cb.addEventListener('change', function () {
+    window.disableAutoSave = this.checked;
+    try { localStorage.setItem('disableAutoSave', this.checked ? '1' : '0'); } catch (e) {}
+    if (typeof window.setAutomaticSave === 'function') window.setAutomaticSave(!this.checked);
+    log(this.checked ? '已取消自动存档' : '已开启自动存档（每7秒保存一次）', 'default');
+  });
+}
+
+// 初始化"画面设置"（更多设置）：default=默认(保持256:240等比显示)；'crt43'=按4:3老电视比例显示。
+// 切换即时生效，选择保存到 localStorage。
+function initDisplayMode() {
+  const sel = document.getElementById('displayModeSelect');
+  if (!sel) return;
+  let dm = 'default';
+  try {
+    const saved = localStorage.getItem('displayMode');
+    if (saved === 'crt43') dm = 'crt43';
+  } catch (e) {}
+  window.displayMode = dm;
+  sel.value = dm;
+  sel.addEventListener('change', function () {
+    window.displayMode = this.value;
+    try { localStorage.setItem('displayMode', this.value); } catch (e) {}
+    if (window.resizeCanvasToFitWindow) window.resizeCanvasToFitWindow();
+    if (window.updateCtxAfterResize) window.updateCtxAfterResize();
+  });
+}
+
+// 初始化"更多设置"
+function initMoreSettings() {
+  const autoSaveLoadSelect = document.getElementById('autoSaveLoadSelect');
+  if (!autoSaveLoadSelect) return;
+
+  // 恢复用户保存的选择，默认"询问载入"
+  let mode = 'ask';
+  try {
+    const saved = localStorage.getItem('autoSaveLoadMode');
+    if (saved === 'ask' || saved === 'auto' || saved === 'never') mode = saved;
+  } catch (e) {}
+  autoSaveLoadSelect.value = mode;
+
+  autoSaveLoadSelect.addEventListener('change', function () {
+    try { localStorage.setItem('autoSaveLoadMode', this.value); } catch (e) {}
+  });
 }
 
 // 初始化所有UI事件
@@ -614,4 +855,10 @@ function initUIEvents() {
   initRenderBackendSwitch();
   initMenuInteractions();
   initDebugPanelLogic();
+  initOnlineGames();
+  initMoreSettings();
+  initDisplayMode();
+  initDisableAutoSave();
+  initMuteAudio();
+  initHookScripts();
 }

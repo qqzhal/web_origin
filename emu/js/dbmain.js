@@ -160,7 +160,9 @@ function initWebGL() {
       return false;
     }
 
-    gl = c.getContext("webgl", { preserveDrawingBuffer: true }) || c.getContext("experimental-webgl", { preserveDrawingBuffer: true });
+    // 不开 preserveDrawingBuffer：它是移动端 tile GPU 的性能大敌（强制帧末写回 tile
+    // 内存、增加带宽与功耗、触发降频）。截图功能改为读取前在同一任务内重绘一帧。
+    gl = c.getContext("webgl") || c.getContext("experimental-webgl");
     if (!gl) {
       console.log("Failed to get WebGL context from main canvas");
       isWebGL = false;
@@ -273,11 +275,33 @@ function initWebGL() {
   }
 }
 
+// WebGL 绘制一帧：滤镜/多缓冲开启时交给 FilterSystem，否则直接上传纹理绘制。
+// draw() 与截图共用，保证两条路径的绘制逻辑一致。
+function drawWebGLFrame() {
+  if (window.FilterSystem && window.FilterSystem.multiBufferEnabled) {
+    if (window.FilterSystem.renderWithMultiBuffering) window.FilterSystem.renderWithMultiBuffering();
+    return;
+  }
+  if ((window.currentFilter === 'NSTC' || window.currentFilter === 'PAL') &&
+      window.FilterSystem && window.FilterSystem.renderWithFilter) {
+    window.FilterSystem.renderWithFilter();
+    return;
+  }
+  gl.viewport(0, 0, c.width, c.height);
+  gl.useProgram(glProgram);
+  gl.bindTexture(gl.TEXTURE_2D, glTexture);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 256, 240, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(imgData.data));
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+
 // Function to get screenshot from WebGL canvas
 function getWebGLScreenshot(canvas) {
   if (!gl || !isWebGL) return canvas.toDataURL("image/png");
 
   try {
+    // 未开 preserveDrawingBuffer：读取像素前必须在同一任务内重绘当前帧，
+    // 否则读到的缓冲内容是未定义的（表现为黑屏截图）
+    drawWebGLFrame();
     const width = canvas.width;
     const height = canvas.height;
     const pixels = new Uint8Array(width * height * 4);
@@ -349,6 +373,11 @@ HTMLCanvasElement.prototype.getContext = function(contextType, ...args) {
 // load persisted settings
 window.scalingMode = localStorage.getItem('scalingMode') || window.scalingMode || 'pixelated';
 window.highDpiMode = (localStorage.getItem('highDpiMode') === '1');
+// 画面设置（更多设置）：default=默认等比显示(256:240)；'crt43'=按4:3老电视比例显示。
+{
+  const _dm = localStorage.getItem('displayMode');
+  window.displayMode = (_dm === 'crt43') ? 'crt43' : 'default';
+}
 // 显示240线设置：默认关闭。若开启，将在最终绘制到 canvas 时在上下各绘制8px黑条
 // 默认关闭：如果 localStorage 中存在用户设置则以用户设置为准，否则默认关闭该视觉效果
 {
@@ -469,14 +498,20 @@ let controlsP2 = {
 zip.workerScriptsPath = "lib/";
 zip.useWebWorkers = false;
 
-// 加速功能变量
-window.turboSpeed = 1; // 1=正常，2/3=加速
+// 加速功能变量（支持小数倍速，如1.5）
+window.turboSpeed = 1;
+// 恢复上次使用的倍速（工具栏按钮 / 小键盘+- 都经由 setTurboSpeed 持久化）
+try {
+  const savedTurbo = parseFloat(localStorage.getItem('turboSpeed'));
+  if (savedTurbo >= 0.25 && savedTurbo <= 8) window.turboSpeed = savedTurbo;
+} catch (e) {}
 window.setTurboSpeed = function (speed) {
   if (typeof speed === "boolean") {
     window.turboSpeed = speed ? 2 : 1;
   } else if (typeof speed === "number") {
     window.turboSpeed = speed;
   }
+  try { localStorage.setItem('turboSpeed', String(window.turboSpeed)); } catch (e) {}
   // 可选：在UI上显示当前倍速
   if (document.getElementById('turboBtnLabel')) {
     document.getElementById('turboBtnLabel').textContent = window.turboSpeed + 'X';
@@ -626,7 +661,9 @@ window.addEventListener('DOMContentLoaded', function () {
   function hideLoadOverlay() {
     if (loadOverlay) loadOverlay.style.display = 'none';
   }
-  if (!loaded) showLoadOverlay(); else hideLoadOverlay();
+  // 引导浮层默认隐藏：熟悉模拟器无需"载入游戏/模拟器更新日志"引导。
+  // 元素与 show/hide 逻辑均保留，要恢复引导改回：if (!loaded) showLoadOverlay(); else hideLoadOverlay();
+  hideLoadOverlay();
   if (loadOverlayText && romInput) {
     loadOverlayText.addEventListener('click', function () {
       // 打开文件选择对话框
@@ -870,6 +907,11 @@ function loadRom(romOrArr, name) {
     loaded = true;
     window.loaded = true;  // 设置全局变量供其他脚本访问
     loadedName = name;
+    // 按游戏恢复"启用自定义音乐功能"开关（每个游戏各自记住，未记录的游戏默认关闭）
+    if (typeof window.restoreCustomMusicEnabledForGame === 'function') {
+      window.restoreCustomMusicEnabledForGame(name);
+    }
+    restoreGameSlot(name);
   try { if (typeof hideLoadOverlay === 'function') hideLoadOverlay(); else { const lo = document.getElementById('loadOverlay'); if (lo) lo.style.display='none'; } } catch(e){}
 
     // 游戏载入成功后直接隐藏 statusBar
@@ -891,18 +933,48 @@ function loadRom(romOrArr, name) {
     drawChrPage(db.nes, ctx, 0);
     document.title = loadedName;
     if (window.SaveManager && SaveManager.checkAutoSave) {
-      setPausedState(true);
-      SaveManager.checkAutoSave(function (err, record) {
-        if (!err && record && record.romName === name && record.saveState) {
-          SaveManager.showAutoSavePrompt(record, function () {
+      // "更多设置-游戏开始载入自动存档"：ask=询问载入(默认) / auto=自动载入 / never=不载入
+      let autoSaveLoadMode = 'ask';
+      try { autoSaveLoadMode = localStorage.getItem('autoSaveLoadMode') || 'ask'; } catch (e) {}
+      if (autoSaveLoadMode === 'never') {
+        // 不载入：不询问也不自动载入，直接开始游戏
+        startAutoSave();
+      } else {
+        setPausedState(true);
+        SaveManager.checkAutoSave(function (err, record) {
+          let hasSave = !err && record && record.romName === name && record.saveState;
+          if (hasSave && autoSaveLoadMode === 'auto') {
+            // 自动载入：跳过询问，直接加载自动存档
+            try {
+              if (window.nes && window.nes.setState(record.saveState)) {
+                // 恢复自定义音乐状态
+                if (record.customMusicState && window.customMusicMonitor) {
+                  setTimeout(function () {
+                    restoreCustomMusicState(record.customMusicState);
+                  }, 100);
+                }
+                log("已自动载入自动存档", "save");
+              } else {
+                throw new Error("设置状态失败");
+              }
+            } catch (e) {
+              console.error("自动载入存档失败:", e);
+              log("自动载入自动存档失败", "save");
+            }
             setPausedState(false);
             startAutoSave();
-          });
-        } else {
-          setPausedState(false);
-          startAutoSave();
-        }
-      });
+          } else if (hasSave) {
+            // 询问载入：弹出提示由用户决定
+            SaveManager.showAutoSavePrompt(record, function () {
+              setPausedState(false);
+              startAutoSave();
+            });
+          } else {
+            setPausedState(false);
+            startAutoSave();
+          }
+        });
+      }
     } else {
       startAutoSave();
     }
@@ -920,6 +992,13 @@ el("rom").onchange = function (e) {
   audioHandler.resume();
   let file = e.target.files[0];
   let fileName = file.name;
+  // 在上传区回显所选文件名
+  let uploadArea = document.querySelector('.rom-upload-area');
+  if (uploadArea) {
+    uploadArea.classList.add('has-file');
+    let titleEl = uploadArea.querySelector('.rom-upload-title');
+    if (titleEl) titleEl.textContent = fileName;
+  }
   // 直接传递 File/Blob 给 loadRom，内部自动判断 zip
   let freader = new FileReader();
   freader.onload = function () {
@@ -987,6 +1066,8 @@ let autoSaveTimer = null;
 
 function startAutoSave() {
   if (autoSaveTimer) clearInterval(autoSaveTimer);
+  // "更多设置-取消自动存档"勾选时不启动定时保存
+  if (window.disableAutoSave) return;
   autoSaveTimer = setInterval(function () {
     if (loaded && !paused && window.nes) {
       let output = document.getElementById('output');
@@ -1002,6 +1083,16 @@ function startAutoSave() {
     }
   }, 7000);
 }
+
+// 运行中切换自动存档（更多设置勾选即时生效）：enabled=false 立即停止定时保存，
+// true 时若游戏正在运行则恢复定时保存
+window.setAutomaticSave = function (enabled) {
+  if (!enabled) {
+    if (autoSaveTimer) { clearInterval(autoSaveTimer); autoSaveTimer = null; }
+  } else if (loaded && !paused && !autoSaveTimer) {
+    startAutoSave();
+  }
+};
 
 function saveBatteryForRom() {
   if (loaded) {
@@ -1073,6 +1164,7 @@ window.unpause = function () {
 let lastFrameTime = performance.now();
 let nesFrameResidue = 0;
 let frameCounter = 0;
+let turboAudioScratch = null;
 function update() {
   let now = performance.now();
   let elapsed = now - lastFrameTime;
@@ -1080,18 +1172,28 @@ function update() {
   if (elapsed > 200) elapsed = 200;
   lastFrameTime = now;
 
-  // 60帧每秒，每帧约16.6667ms
-  let nesFrames = (elapsed + nesFrameResidue) / (1000 / 60);
-  let framesToRun = Math.floor(nesFrames);
-  nesFrameResidue = (elapsed + nesFrameResidue) - framesToRun * (1000 / 60);
-
-  // turbo模式下加速
+  // turbo模式下加速：把倍率并入帧时间计算，支持小数倍速（如1.5x），
+  // 通过帧时间残差平滑累积，避免 1.5x 被取整成 2x。
   let turbo = window.turboSpeed || 1;
-  framesToRun = framesToRun * turbo;
+  let frameDur = (1000 / 60) / turbo; // 每模拟帧所需毫秒
+  let nesFrames = (elapsed + nesFrameResidue) / frameDur;
+  let framesToRun = Math.floor(nesFrames);
+  nesFrameResidue = (elapsed + nesFrameResidue) - framesToRun * frameDur;
+
+  // 移动端一次回调补跑过多帧会长时间占用主线程，形成“越卡越追帧”的循环。
+  // 丢弃本次过量的追帧时间，让模拟器在下一次屏幕刷新中重新跟上节奏。
+  // 基准测试显示本模拟器单帧在桌面约 2.9ms、在手机端会成倍放大。
+  // 加速掉帧时一次补跑过多帧会造成长时间主线程阻塞，因此加速档位把
+  // 单次回调的上限收紧（2x 也只需 2 帧/回调），减少卡顿加剧的连锁反应。
+  const maxFramesPerTick = turbo > 1 ? 3 : 4;
+  if (framesToRun > maxFramesPerTick) {
+    framesToRun = maxFramesPerTick;
+    nesFrameResidue = 0;
+  }
 
   if (framesToRun > 0) {
     for (let i = 0; i < framesToRun; i++) {
-      let r = runFrame();
+      let r = runFrame(i === framesToRun - 1);
       if (r) {
         setPausedState(true);
         return;
@@ -1100,13 +1202,20 @@ function update() {
   }
   loopId = requestAnimationFrame(update);
 }
-function runFrame() {
+function runFrame(renderFrame) {
   let bpHit = db.runFrame();
   frameCounter++;
-  // 跳帧逻辑：根据设置的间隔绘制
+
+  // 加速时只绘制这一批模拟帧中的最后一帧，避免重复像素上传、滤镜和画布操作。
   const skipFrames = window.skipFrames || 1;
-  if (frameCounter % skipFrames === 0) {
+  if (renderFrame && frameCounter % skipFrames === 0) {
     draw();
+  } else if (audioHandler && audioHandler.hasAudio) {
+    // 未绘制的模拟帧也要消费 APU 数据，避免跳帧或加速时音频在模拟器内部滞留。
+    if (!turboAudioScratch || turboAudioScratch.length !== audioHandler.samplesPerFrame) {
+      turboAudioScratch = new Float32Array(audioHandler.samplesPerFrame);
+    }
+    db.nes.getSamples(turboAudioScratch, audioHandler.samplesPerFrame);
   }
   if (bpHit) {
     return true;
@@ -1172,31 +1281,7 @@ function draw() {
 
   if (window.renderBackend === 'webgl' && isWebGL) {
     // WebGL rendering
-    //console.log("Rendering with WebGL");
-
-    if (window.FilterSystem && window.FilterSystem.multiBufferEnabled) {
-      // 多倍缓冲渲染 (运动模糊/残影效果)
-      if (window.FilterSystem.renderWithMultiBuffering) window.FilterSystem.renderWithMultiBuffering();
-    } else if (window.currentFilter === 'NSTC' || window.currentFilter === 'PAL') {
-      // 着色器滤镜渲染
-      if (window.FilterSystem && window.FilterSystem.renderWithFilter) {
-        window.FilterSystem.renderWithFilter();
-      } else {
-        // 回退到普通渲染
-        gl.viewport(0, 0, c.width, c.height);
-        gl.useProgram(glProgram);
-        gl.bindTexture(gl.TEXTURE_2D, glTexture);
-  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 256, 240, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(imgData.data));
-        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-      }
-    } else {
-      // 普通WebGL渲染
-      gl.viewport(0, 0, c.width, c.height);
-      gl.useProgram(glProgram);
-      gl.bindTexture(gl.TEXTURE_2D, glTexture);
-  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 256, 240, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(imgData.data));
-      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-    }
+    drawWebGLFrame();
   } else {
     // 2D fallback
     // If high DPI mode enabled, write into buffer and scale to visible canvas using drawImage
@@ -1246,7 +1331,8 @@ function draw() {
             ctxo.o_lastFps = currentFps;
 
             // 清除右上角小区域（使用 CSS 像素坐标，因为我们对 context 做了 dpr 缩放）
-            const cssW = parseFloat(getComputedStyle(ctxo.canvas).width) || ctxo.canvas.clientWidth;
+            // overlay 的 CSS 宽度是显式设置的，clientWidth 即 CSS 宽度，避免 getComputedStyle 强制样式计算
+            const cssW = ctxo.canvas.clientWidth;
             const clearW = 160;
             const clearH = 48;
             ctxo.clearRect(cssW - clearW, 0, clearW, clearH);
@@ -1260,7 +1346,7 @@ function draw() {
             ctxo.fillStyle = '#fff';
             ctxo.strokeStyle = 'rgba(0,0,0,0.45)';
             ctxo.lineWidth = Math.max(1, Math.floor(fontSize / 6));
-            const x = (parseFloat(getComputedStyle(ctxo.canvas).width) || ctxo.canvas.clientWidth) - 8;
+            const x = ctxo.canvas.clientWidth - 8;
             const y = 4;
             let fpsText = currentFps > 0 ? currentFps + ' FPS' : '... FPS';
             ctxo.strokeText(fpsText, x, y);
@@ -1529,32 +1615,106 @@ window.fillGameInfo = function (containerEl) {
 
 
 
-function save_State() {
-  let saveState = db.nes.getState();
-  let slot = window.currentSaveSlot !== undefined ? window.currentSaveSlot : 0;
-
-  let output = document.getElementById('output');
-  let screenshot = isWebGL ? getWebGLScreenshot(output) : output.toDataURL("image/png");
-  let timestamp = new Date().toLocaleString();
-
-  if (window.SaveManager && SaveManager.updateSaveSlot) {
-    SaveManager.updateSaveSlot(slot, screenshot, timestamp, function (err, record) {
-      if (err) {
-        log(i18n('log.save.failed_save_state') + "到存档卡槽" + slot, "save");
-        return;
-      }
-
-      record.saveState = saveState;
-
-      window.SaveManager.updateSaveData(slot, record, function (err) {
-        if (err) {
-          log(i18n('log.save.failed_save_state') + "到存档卡槽" + slot, "save");
-        } else {
-          log(i18n('log.save.saved_state') + "到存档卡槽" + slot, "save");
-        }
+// 每个游戏各自记住上次使用的快速存档槽（普通槽位 0-19 是所有游戏共用的，
+// 切换游戏后若不切槽，很容易把上一个游戏同号槽的存档覆盖掉）
+const SLOT_BY_GAME_KEY = 'quickSlotByGame';
+function rememberGameSlot(romName, slot) {
+  if (!romName || typeof slot !== 'number') return;
+  try {
+    let map = JSON.parse(localStorage.getItem(SLOT_BY_GAME_KEY) || '{}');
+    map[romName] = slot;
+    localStorage.setItem(SLOT_BY_GAME_KEY, JSON.stringify(map));
+  } catch (e) { /* ignore */ }
+}
+function restoreGameSlot(romName) {
+  function normalizeSlot(slot) {
+    if (typeof slot === 'string' && /^\d+$/.test(slot)) return parseInt(slot, 10);
+    return slot;
+  }
+  function applySlot(slot, why) {
+    slot = normalizeSlot(slot);
+    if (typeof slot !== 'number' || slot === window.currentSaveSlot) return;
+    window.currentSaveSlot = slot;
+    if (window.SaveManager && SaveManager.setDefaultSlot) SaveManager.setDefaultSlot(slot, function () {});
+    log("已切换到本游戏" + why + "的存档卡槽 " + slot, "save");
+  }
+  function scanSaveSlots() {
+    // 没有记忆或记忆槽位无效时：找存档库里该游戏最近一次存档所在的普通槽位
+    if (!(window.SaveManager && SaveManager.getAllSaveSlots)) return;
+    SaveManager.getAllSaveSlots(function (err, list) {
+      if (err || !list) return;
+      let best = null, bestTime = -1;
+      list.forEach(function (item) {
+        if (!item || item.romName !== romName || !item.saveState) return;
+        let slot = normalizeSlot(item.slot);
+        if (typeof slot !== 'number') return;
+        let t = Date.parse(item.timestamp) || 0;
+        if (t > bestTime || (t === bestTime && best !== null && slot > best)) { bestTime = t; best = slot; }
       });
+      if (best !== null) { rememberGameSlot(romName, best); applySlot(best, "最近存档"); }
     });
   }
+  try {
+    let map = JSON.parse(localStorage.getItem(SLOT_BY_GAME_KEY) || '{}');
+    if (Object.prototype.hasOwnProperty.call(map, romName)) {
+      let mapped = normalizeSlot(map[romName]);
+      if (typeof mapped === 'number' && window.SaveManager && SaveManager.getSaveData) {
+        // 校验旧映射：槽位里必须真的是当前游戏的存档，否则回退扫描存档库
+        SaveManager.getSaveData(mapped, function (err, record) {
+          if (!err && record && record.romName === romName && record.saveState) {
+            applySlot(mapped, "上次使用");
+          } else {
+            scanSaveSlots();
+          }
+        });
+        return;
+      }
+      if (typeof mapped === 'number') { applySlot(mapped, "上次使用"); return; }
+    }
+  } catch (e) { /* ignore */ }
+  scanSaveSlots();
+}
+
+function save_State() {
+  let slot = window.currentSaveSlot !== undefined ? window.currentSaveSlot : 0;
+  if (!(window.SaveManager && SaveManager.updateSaveSlot)) return;
+  // 按键瞬间抓取状态与截图，再做槽位检查
+  let saveState = db.nes.getState();
+  let output = document.getElementById('output');
+  let screenshot = isWebGL ? getWebGLScreenshot(output) : output.toDataURL("image/png");
+
+  // 目标槽已是其他游戏的存档时先确认，避免无意覆盖
+  SaveManager.getSaveData(slot, function (err, existing) {
+    if (!err && existing && existing.saveState && existing.romName && existing.romName !== loadedName) {
+      if (!confirm("存档卡槽 " + slot + " 里是《" + existing.romName + "》的存档（" + existing.timestamp + "），\n继续会用当前游戏的进度覆盖它。是否覆盖？")) {
+        log("已取消存档（卡槽 " + slot + " 属于其他游戏），可先按 3 打开存档列表换个卡槽", "save");
+        return;
+      }
+    }
+    doSaveState(slot, saveState, screenshot);
+  });
+}
+
+function doSaveState(slot, saveState, screenshot) {
+  let timestamp = new Date().toLocaleString();
+
+  SaveManager.updateSaveSlot(slot, screenshot, timestamp, function (err, record) {
+    if (err) {
+      log(i18n('log.save.failed_save_state') + "到存档卡槽" + slot, "save");
+      return;
+    }
+
+    record.saveState = saveState;
+
+    window.SaveManager.updateSaveData(slot, record, function (err) {
+      if (err) {
+        log(i18n('log.save.failed_save_state') + "到存档卡槽" + slot, "save");
+      } else {
+        log(i18n('log.save.saved_state') + "到存档卡槽" + slot, "save");
+        rememberGameSlot(loadedName, slot);
+      }
+    });
+  });
 }
 
 function load_State() {
@@ -1568,7 +1728,7 @@ function load_State() {
       }
 
       if (record.romName !== loadedName) {
-        log("存档卡槽" + slot + "为空，无法读档!", "save");
+        log("存档卡槽" + slot + "属于《" + record.romName + "》，当前游戏是《" + loadedName + "》，无法读档!", "save");
         return;
       }
 

@@ -17,7 +17,7 @@ function Debugger(nes, ctx) {
   // 新增：自定义updateLine
   this.customUpdateLine = 120;
 
-  this.nes.onread = (a, v) => this.onread(a, v);
+  this.nes.onread = (a) => this.onread(a);
   this.nes.onwrite = (a, v) => this.onwrite(a, v);
 
   this.ramCdl = new Uint8Array(0x8000); // addresses $0-$7fff
@@ -27,11 +27,22 @@ function Debugger(nes, ctx) {
   this.isPaused = false;
   this.pauseOnStart = false;
   this.disasmStopRefresh = true; // 默认勾选
+  this._lastDisasmPc = -1;       // 上次反汇编刷新时的 PC（限频用）
+  this._lastDisasmTime = 0;
   this.runCount = 0; // 执行N条后暂停
   this.commentBreakKeywords = []; // 注释断点关键词
 
   // 新增：记录内存访问类型（0: 未访问, 1: 读取, 2: 写入, 3: 执行）
   this.ramAccessType = new Uint8Array(0x800); // 仅记录 $0000-$1FFF 的 RAM 区域
+
+  // 访问记录开关：RAM 热图 / 反汇编 CDL 高亮渲染期间置 true（需要逐指令记录，走慢路径）
+  this.trackAccess = false;
+
+  // 调试面板是否显示（wrapper 显隐由内联 style 控制，初始 display:none）
+  this._isDebugUIVisible = function () {
+    const w = el('wrapper');
+    return !!(w && w.style.display && w.style.display !== 'none');
+  };
 
   // load rom, do reset, set up cdl
   this.loadRom = function (rom, callback) {
@@ -43,6 +54,8 @@ function Debugger(nes, ctx) {
         // reset breakpoints
         self.breakpoints = [];
         self.updateBreakpointList();
+        // 换 ROM 后关闭访问记录，重新回到快路径（面板渲染时会再次开启）
+        self.trackAccess = false;
         // clear ram cdl
         for (let i = 0; i < 0x8000; i++) {
           self.ramCdl[i] = 0;
@@ -80,10 +93,13 @@ function Debugger(nes, ctx) {
       if (adr < 0x2000) {
         this.ramAccessType[adr & 0x7ff] = 3;
       }
-      for (let breakpoint of this.breakpoints) {
-        if (breakpoint.adr === adr && breakpoint.exec) {
-          log(i18n('log.default.breakpoint_execute', { adr: this.nes.getWordRep(adr) }), "default");
-          this.bpFired = true;
+      if (this.breakpoints.length !== 0) {
+        for (let i = 0; i < this.breakpoints.length; i++) {
+          const breakpoint = this.breakpoints[i];
+          if (breakpoint.adr === adr && breakpoint.exec) {
+            log(i18n('log.default.breakpoint_execute', { adr: this.nes.getWordRep(adr) }), "default");
+            this.bpFired = true;
+          }
         }
       }
       // adr < $8000: set ram cdl, else set rom cdl
@@ -132,6 +148,21 @@ function Debugger(nes, ctx) {
   // in which case the emulator should pause itself
   this.runFrame = function () {
     this.frames++;
+    if (this.isPaused) return true;
+
+    // 快路径：无断点/注释断点/单步需求/访问记录需求且调试面板未显示时，
+    // 直接整帧执行，跳过逐 cycle 的调试检查（每帧约 3 万次迭代，手机端主要开销）。
+    // 注意：nes.runFrame 末尾会执行 applyCT2RamLocks（CT2 冻结金手指每帧写回），
+    // 比原逐指令路径多这一次调用——原路径只有勾选金手指瞬间写入一次。
+    if (this.breakpoints.length === 0 &&
+        this.commentBreakKeywords.length === 0 &&
+        this.runCount === 0 &&
+        !this.trackAccess &&
+        !this._isDebugUIVisible()) {
+      this.nes.runFrame();
+      return false;
+    }
+
     let b, count = 0;
 
     do {
@@ -141,7 +172,7 @@ function Debugger(nes, ctx) {
       count++;
 
       // 合并断点/注释断点/runCount 达到
-      if (b || this.checkCommentBreakpoint(this.nes.cpu.br[0]) || (this.runCount > 0 && count >= this.runCount)) {
+      if (b || (this.commentBreakKeywords.length !== 0 && this.checkCommentBreakpoint(this.nes.cpu.br[0])) || (this.runCount > 0 && count >= this.runCount)) {
         setPausedState(true);
         this.runCount = 0;
         if (this.selectedView === 3) {
@@ -583,12 +614,17 @@ function Debugger(nes, ctx) {
   }
 
   // 读断点
-  this.onread = function (adr, val) {
+  this.onread = function (adr) {
+    // 空转短路：无断点且无需访问记录时直接返回（快路径下每次读内存都会经过这里）
+    if (this.breakpoints.length === 0 && !this.trackAccess) return;
     if (adr < 0x2000) {
       this.ramAccessType[adr & 0x7ff] = 1;
     }
-    for (let breakpoint of this.breakpoints) {
+    for (let i = 0; i < this.breakpoints.length; i++) {
+      const breakpoint = this.breakpoints[i];
       if (breakpoint.adr === adr && breakpoint.read) {
+        // 延迟取值：只在断点真正触发时读取（原实现每次读内存都先跑一遍 peak）
+        const val = this.nes.peak(adr);
         log(i18n('log.default.breakpoint_read', { val: this.nes.getByteRep(val), adr: this.nes.getWordRep(adr) }), "default");
         this.bpFired = true;
       }
@@ -596,10 +632,13 @@ function Debugger(nes, ctx) {
   };
   // 写断点
   this.onwrite = function (adr, val) {
+    // 空转短路：无断点且无需访问记录时直接返回（快路径下每次写内存都会经过这里）
+    if (this.breakpoints.length === 0 && !this.trackAccess) return;
     if (adr < 0x2000) {
       this.ramAccessType[adr & 0x7ff] = 2;
     }
-    for (let breakpoint of this.breakpoints) {
+    for (let i = 0; i < this.breakpoints.length; i++) {
+      const breakpoint = this.breakpoints[i];
       if (breakpoint.adr === adr && breakpoint.write) {
         log(i18n('log.default.breakpoint_write', { val: this.nes.getByteRep(val), adr: this.nes.getWordRep(adr) }), "default");
         this.bpFired = true;
@@ -641,6 +680,10 @@ function Debugger(nes, ctx) {
     //反汇编界面显示，刷新全部内容
     if (this.selectedView === 3) {
       if (this.disasmStopRefresh) return;
+      // 限频优化：innerHTML 重建 32 行 DOM 是大头，PC 没变就跳过；
+      // 但 bank 切换/注释数据可能让同一 PC 显示的内容变化，每 500ms 强制刷一次兜底
+      let pcNow = this.nes.cpu && this.nes.cpu.br ? this.nes.cpu.br[0] : 0;
+      if (pcNow === this._lastDisasmPc && (performance.now() - this._lastDisasmTime) < 500) return;
       this.drawDissasembly();
       return;
     }
@@ -727,6 +770,9 @@ function Debugger(nes, ctx) {
 
   // 重写 drawDissasembly，VirtuaNES-debug风格，文本模式，带表头对齐
   this.drawDissasembly = function () {
+    // CDL 高亮（isOpcode）依赖 ramCdl/romCdl 执行记录：仅在面板可见时开启访问记录。
+    // 面板关闭时（如断点命中触发的暂停刷新）不置位，避免恢复运行后残留慢路径。
+    if (this._isDebugUIVisible()) this.trackAccess = true;
     this.drawCpuStatus();
     // 表头
     let header = el("disasm_header");
@@ -815,6 +861,10 @@ function Debugger(nes, ctx) {
 
     // 滚动到最下
     pre.scrollTop = pre.scrollHeight;
+
+    // 记录本次刷新状态，供 updateDebugView 的限频判断使用
+    this._lastDisasmPc = pc;
+    this._lastDisasmTime = performance.now();
   };
 
   // VirtuaNES风格注释，尽量解读为赋值/跳转/比较等

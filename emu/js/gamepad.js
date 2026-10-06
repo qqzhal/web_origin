@@ -3,6 +3,11 @@ window.IDBConfigManager = {
   dbName: 'NesEmulator',
   storeName: 'configs',
 
+  // 按屏幕方向区分存储键：横屏/竖屏各自保存一份虚拟按键布局
+  configKey: function (landscape) {
+    return landscape ? 'controllerConfig_landscape' : 'controllerConfig_portrait';
+  },
+
   // 打开数据库连接
   openDB: function (callback) {
     let request = indexedDB.open(this.dbName, 1);
@@ -19,50 +24,79 @@ window.IDBConfigManager = {
     request.onsuccess = () => callback(null, request.result);
   },
 
-  // 保存配置
+  // 保存配置：布局写入当前方向的存储键；键位映射（不分方向）同步到两个键
   save: function (config, callback) {
     this.openDB((err, db) => {
       if (err) return callback(err);
 
+      const landscape = isLandscape();
       let transaction = db.transaction([this.storeName], 'readwrite');
       let store = transaction.objectStore(this.storeName);
 
-      // 保存所有配置
-      let configData = {
-        transparentButtons: window.transparentButtonSettings,
-        keyMap: window.keyMap,
-        commonKeyMap: window.commonKeyMap
+      // 当前方向：保存完整配置
+      store.put({
+        transparentButtons: config.transparentButtons,
+        keyMap: config.keyMap,
+        commonKeyMap: config.commonKeyMap
+      }, this.configKey(landscape));
+
+      // 另一方向：只同步键位映射；其无保存布局时不写入（保持无保存状态，
+      // 让该方向回落到代码默认布局，而不是把当前方向的布局复制过去）
+      const otherKey = this.configKey(!landscape);
+      const getOther = store.get(otherKey);
+      getOther.onsuccess = () => {
+        const other = getOther.result;
+        if (other && other.transparentButtons) {
+          store.put({
+            transparentButtons: other.transparentButtons,
+            keyMap: config.keyMap,
+            commonKeyMap: config.commonKeyMap
+          }, otherKey);
+        }
       };
 
-      let request = store.put(configData, 'controllerConfig');
+      transaction.oncomplete = () => callback(null);
+      transaction.onerror = () => callback(transaction.error);
 
-      request.onerror = () => callback(request.error);
-      request.onsuccess = () => callback(null);
+      // 同步内存缓存：避免 resize 重排时又取回旧布局
+      if (!window.__savedLayouts) window.__savedLayouts = {};
+      window.__savedLayouts[landscape ? 'landscape' : 'portrait'] =
+        JSON.parse(JSON.stringify(config.transparentButtons));
     });
   },
 
-  // 加载配置
+  // 加载当前方向的配置（无存储时回调 null）
   load: function (callback) {
     this.openDB((err, db) => {
       if (err) return callback(err);
 
       let transaction = db.transaction([this.storeName], 'readonly');
       let store = transaction.objectStore(this.storeName);
-      let request = store.get('controllerConfig');
+      let request = store.get(this.configKey(isLandscape()));
 
       request.onerror = () => callback(request.error);
-      request.onsuccess = () => {
-        if (request.result) {
-          callback(null, request.result);
-        } else {
-          // 返回默认配置
-          callback(null, {
-            transparentButtons: window.transparentButtonSettings,
-            keyMap: window.keyMap,
-            commonKeyMap: window.commonKeyMap
-          });
-        }
-      };
+      request.onsuccess = () => callback(null, request.result || null);
+    });
+  },
+
+  // 同时加载横屏/竖屏两份配置，并清理旧版不区分方向的单键存储
+  loadBoth: function (callback) {
+    this.openDB((err, db) => {
+      if (err) return callback(err);
+
+      const transaction = db.transaction([this.storeName], 'readwrite');
+      const store = transaction.objectStore(this.storeName);
+      const out = { landscape: null, portrait: null };
+
+      const getL = store.get(this.configKey(true));
+      getL.onsuccess = () => { out.landscape = getL.result || null; };
+      const getP = store.get(this.configKey(false));
+      getP.onsuccess = () => { out.portrait = getP.result || null; };
+
+      store.delete('controllerConfig');
+
+      transaction.oncomplete = () => callback(null, out.landscape, out.portrait);
+      transaction.onerror = () => callback(transaction.error);
     });
   }
 };
@@ -70,33 +104,31 @@ window.IDBConfigManager = {
 
 
 // 在 DOMContentLoaded 事件中调用初始化
-// 初始化配置，优先从数据库加载
+// 初始化配置，优先从数据库加载（横屏/竖屏两份布局分开读取）
 document.addEventListener('DOMContentLoaded', function () {
   window.toolbarExpanded = false; // 初始化工具栏为折叠状态
-  window.IDBConfigManager.load(function (err, config) {
-    if (config) {
-      if (config.keyMap) window.keyMap = config.keyMap;
-      if (config.commonKeyMap) window.commonKeyMap = config.commonKeyMap;
-      if (config.transparentButtons) window.transparentButtonSettings = config.transparentButtons;
+  window.IDBConfigManager.loadBoth(function (err, lsConfig, psConfig) {
+    // 按方向记住已保存的布局（没有保存的方向为空，回落到代码默认布局）
+    window.__savedLayouts = {
+      landscape: lsConfig ? lsConfig.transparentButtons : undefined,
+      portrait: psConfig ? psConfig.transparentButtons : undefined
+    };
+    // 键位映射不分方向：保存时会同步到两份，这里取任一份已保存的
+    const anyConfig = lsConfig || psConfig;
+    if (anyConfig && (anyConfig.keyMap || anyConfig.commonKeyMap)) {
+      if (anyConfig.keyMap) keyMap = anyConfig.keyMap;
+      if (anyConfig.commonKeyMap) commonKeyMap = anyConfig.commonKeyMap;
     } else {
       // 没有存储时初始化默认
-      window.keyMap = {};
-      window.keyMap[1] = { ...defaultKeyMap };
-      window.keyMap[2] = { ...defaultKeyMap2 };
-      window.commonKeyMap = { ...commonKeyMap };
-      if (!isMobileDevice()) {
-        window.transparentButtonSettings = {
-          DPAD: { left: 0.03, top: 0.60, width: 0.32, height: 0.32, opacity: 0.7 },
-          LOAD: { left: 0.65, top: 0.60, width: 0.10, height: 0.08, opacity: 0.5 },
-          SAVE: { left: 0.80, top: 0.60, width: 0.10, height: 0.08, opacity: 0.5 },
-          B: { left: 0.65, top: 0.75, width: 0.10, height: 0.08, opacity: 0.5 },
-          A: { left: 0.80, top: 0.75, width: 0.10, height: 0.08, opacity: 0.5 },
-          SELECT: { left: 0.35, top: 0.88, width: 0.12, height: 0.08, opacity: 0.5 },
-          START: { left: 0.53, top: 0.88, width: 0.12, height: 0.08, opacity: 0.5 }
-        };
-      } else {
-        setMobileButtonLayout();
-      }
+      keyMap = {};
+      keyMap[1] = { ...defaultKeyMap };
+      keyMap[2] = { ...defaultKeyMap2 };
+      commonKeyMap = { ...commonKeyMap };
+    }
+    // 当前方向有保存的布局则应用（覆盖脚本加载时设置的代码默认值）
+    const savedNow = isLandscape() ? window.__savedLayouts.landscape : window.__savedLayouts.portrait;
+    if (savedNow) {
+      window.transparentButtonSettings = JSON.parse(JSON.stringify(savedNow));
     }
     renderTransparentOverlay();
     // 其它初始化逻辑（如 waitForNesAndBindKeys() 等）放这里
@@ -125,6 +157,13 @@ if (!isMobileDevice()) {
 }
 else {
   function setMobileButtonLayout() {
+    // 优先使用用户按方向保存的布局（拖动编辑保存）；该方向无保存时用代码默认值。
+    // 深拷贝：避免渲染/编辑直接改动保存缓存对象
+    const saved = window.__savedLayouts && (isLandscape() ? window.__savedLayouts.landscape : window.__savedLayouts.portrait);
+    if (saved) {
+      window.transparentButtonSettings = JSON.parse(JSON.stringify(saved));
+      return;
+    }
     if (isLandscape()) {
       // 横屏布局
       window.transparentButtonSettings = {
@@ -366,24 +405,21 @@ function renderTransparentOverlay(editMode = false) {
         }
       });
     }
+    // 缓存高亮元素引用：touchmove 高频触发，避免每次都 querySelectorAll
+    const dirEls = dpad.querySelectorAll('.dpad-dir-highlight');
+    let highlightedDir = null;
     function setDpadHighlight(dir) {
-      overlay.querySelectorAll('.dpad-dir-highlight').forEach(el => {
+      if (dir === highlightedDir) return; // 方向未变时跳过全部 DOM 操作
+      highlightedDir = dir;
+      dirEls.forEach(el => {
         if (el.getAttribute('data-dir') === dir) el.classList.add('active');
         else el.classList.remove('active');
       });
-      let svg = overlay.querySelector('.transp-btn-dpad svg');
-      if (svg) {
-        svg.querySelectorAll('.dpad-dot').forEach(dot => {
-          if (dot.getAttribute('data-dir') === dir) {
-            dot.setAttribute('opacity', '1');
-          } else {
-            dot.setAttribute('opacity', '0.5');
-          }
-        });
-      }
     }
     function clearDpadHighlight() {
-      dpad.querySelectorAll('.dpad-dir-highlight').forEach(el => el.classList.remove('active'));
+      if (highlightedDir === null) return;
+      highlightedDir = null;
+      dirEls.forEach(el => el.classList.remove('active'));
     }
 
     let lastDir = null;
@@ -646,7 +682,8 @@ function renderTransparentOverlay(editMode = false) {
     if (!editMode) {
       turboBtn.onclick = function (e) {
         if (!window.turboSpeed) window.turboSpeed = 1;
-        window.turboSpeed = window.turboSpeed === 3 ? 1 : window.turboSpeed + 1;
+        // 档位循环：1x -> 1.5x -> 2x -> 1x
+        window.turboSpeed = window.turboSpeed >= 2 ? 1 : window.turboSpeed + 0.5;
         let lbl = turboBtn.querySelector('.toolbar-label');
         if (lbl) lbl.textContent = window.turboSpeed + 'X';
         if (window.setTurboSpeed) window.setTurboSpeed(window.turboSpeed);
@@ -893,9 +930,12 @@ function renderTransparentOverlay(editMode = false) {
       e.stopPropagation();
       return false;
     };
+    // 只使用 click 处理展开/收起。移动端一次触摸会兼容触发 pointer/touch/click，
+    // 同时绑定多个事件会导致状态连续切换，表现为菜单刚展开就立即收回。
+    // onclick 使用属性绑定，重复刷新控制器时也不会累积旧监听器。
     toggleBtn.onclick = toggleHandler;
-    toggleBtn.addEventListener('touchstart', toggleHandler, { passive: false });
-    toggleBtn.addEventListener('pointerdown', toggleHandler, { passive: false });
+    //toggleBtn.addEventListener('touchstart', toggleHandler, { passive: false });
+    //toggleBtn.addEventListener('pointerdown', toggleHandler, { passive: false });
   }
   overlay.appendChild(toggleBtn);
 
@@ -925,8 +965,8 @@ function renderTransparentOverlay(editMode = false) {
       if (window.IDBConfigManager && window.IDBConfigManager.save) {
         window.IDBConfigManager.save({
           transparentButtons: window.transparentButtonSettings,
-          keyMap: window.keyMap,
-          commonKeyMap: window.commonKeyMap
+          keyMap: keyMap,
+          commonKeyMap: commonKeyMap
         }, function (err) {
           if (err) {
             alert("保存按键配置失败");
@@ -1274,7 +1314,8 @@ function renderTransparentTab(contentDiv) {
     }
     if (resetBtn) {
       resetBtn.onclick = function () {
-        // 恢复默认配置
+        // 恢复默认配置（先清除当前方向已保存的布局缓存，否则重置会被缓存覆盖）
+        if (window.__savedLayouts) window.__savedLayouts[isLandscape() ? 'landscape' : 'portrait'] = undefined;
         if (!isMobileDevice()) {
           window.transparentButtonSettings = {
             DPAD: { left: 0.03, top: 0.60, width: 0.32, height: 0.32, opacity: 0.7 },
@@ -1295,8 +1336,8 @@ function renderTransparentTab(contentDiv) {
         if (window.IDBConfigManager && window.IDBConfigManager.save) {
           window.IDBConfigManager.save({
             transparentButtons: window.transparentButtonSettings,
-            keyMap: window.keyMap,
-            commonKeyMap: window.commonKeyMap
+            keyMap: keyMap,
+            commonKeyMap: commonKeyMap
           }, function (err) {
             if (err) {
               alert("保存按键配置失败");
@@ -1346,8 +1387,8 @@ function renderTransparentTab(contentDiv) {
         // 保存到数据库
         window.IDBConfigManager.save({
           transparentButtons: window.transparentButtonSettings,
-          keyMap: window.keyMap,
-          commonKeyMap: window.commonKeyMap
+          keyMap: keyMap,
+          commonKeyMap: commonKeyMap
         }, function (err) {
           if (err) {
             alert("保存按键配置失败");
@@ -1444,8 +1485,8 @@ function renderControllerTab(contentDiv, currentPlayer) {
         // 保存到数据库
         window.IDBConfigManager.save({
           transparentButtons: window.transparentButtonSettings,
-          keyMap: window.keyMap,
-          commonKeyMap: window.commonKeyMap
+          keyMap: keyMap,
+          commonKeyMap: commonKeyMap
         }, function (err) {
           if (err) {
             alert("保存按键配置失败");

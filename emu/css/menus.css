@@ -221,6 +221,12 @@ body {
   align-items: center;
 }
 
+/* 行与行之间统一间距：此前没有该规则，行距全靠 select/button 自身 padding 撑出，
+   矮控件（checkbox 等）紧跟控件后会贴死 */
+.menu-dropdown .row + .row {
+  margin-top: 8px;
+}
+
 .menu-dropdown .row.two-col {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -232,8 +238,7 @@ body {
 }
 
 .menu-dropdown select,
-.menu-dropdown button,
-.menu-dropdown input[type=file] {
+.menu-dropdown button {
   appearance: none;
   background: rgba(255, 255, 255, 0.08);
   color: #fff;
@@ -244,18 +249,86 @@ body {
   cursor: pointer;
 }
 
-/* 桌面端文件上传输入框优化 */
-.menu-dropdown input[type=file] {
+/* ===== 文件上传区（美化后的 input file） ===== */
+.rom-upload {
   width: 100%;
-  min-height: 36px;
-  box-sizing: border-box;
-  transition: all 0.2s ease;
 }
 
-.menu-dropdown input[type=file]:hover,
-.menu-dropdown input[type=file]:focus {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.25);
+/* 原生 input 视觉隐藏，但保留可聚焦与可访问性 */
+.rom-upload-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.rom-upload-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 88px;
+  padding: 14px 12px;
+  text-align: center;
+  color: #cfd8dc;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1.5px dashed rgba(255, 255, 255, 0.35);
+  border-radius: 10px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.1s ease;
+}
+
+.rom-upload-area:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.6);
+  color: #fff;
+}
+
+.rom-upload-area:active {
+  transform: scale(0.98);
+}
+
+/* 键盘聚焦原生 input 时高亮上传区 */
+.rom-upload-input:focus-visible + .rom-upload-area {
+  outline: 2px solid rgba(255, 255, 255, 0.35);
+  outline-offset: 2px;
+}
+
+.rom-upload-icon {
+  opacity: 0.9;
+  flex-shrink: 0;
+}
+
+.rom-upload-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  word-break: break-all;
+}
+
+.rom-upload-hint {
+  font-size: 12px;
+  line-height: 1.4;
+  color: #9fb0bd;
+}
+
+/* 已选择文件：实线绿色强调 */
+.rom-upload-area.has-file {
+  border-style: solid;
+  border-color: rgba(102, 187, 106, 0.75);
+  background: rgba(102, 187, 106, 0.1);
+}
+
+.rom-upload-area.has-file .rom-upload-icon {
+  opacity: 1;
+  color: #81c784;
 }
 
 .menu-dropdown button:not(.menu-group-toggle):not(.menu-action):not(.menu-close) {
@@ -274,8 +347,7 @@ body {
 }
 
 .menu-dropdown select:focus,
-.menu-dropdown button:focus,
-.menu-dropdown input[type=file]:focus {
+.menu-dropdown button:focus {
   outline: 2px solid rgba(255, 255, 255, 0.35);
   outline-offset: 2px;
 }
@@ -318,31 +390,24 @@ body {
   }
 
   .menu-dropdown select,
-  .menu-dropdown button,
-  .menu-dropdown input[type=file] {
+  .menu-dropdown button {
     font-size: 15px;
     padding: 10px 12px;
   }
 
-  /* 手机端文件上传输入框特殊优化 */
-  .menu-dropdown input[type=file] {
-    width: 100%;
-    min-height: 44px; /* 触摸友好的最小高度 */
-    font-size: 16px; /* 增大字体便于触摸 */
-    padding: 12px 14px; /* 增加内边距 */
-    border: 2px solid rgba(255, 255, 255, 0.2); /* 更明显的边框 */
-    background: rgba(255, 255, 255, 0.1); /* 更明显的背景 */
-    border-radius: 8px; /* 圆角 */
-    cursor: pointer; /* 手型光标 */
-    transition: all 0.2s ease; /* 过渡动画 */
+  /* 手机端上传区：更大的触摸目标与字号 */
+  .rom-upload-area {
+    min-height: 104px;
+    padding: 16px 14px;
+    gap: 6px;
   }
 
-  .menu-dropdown input[type=file]:hover,
-  .menu-dropdown input[type=file]:focus {
-    background: rgba(255, 255, 255, 0.15);
-    border-color: rgba(255, 255, 255, 0.4);
-    outline: 2px solid rgba(255, 255, 255, 0.3);
-    outline-offset: 2px;
+  .rom-upload-title {
+    font-size: 16px;
+  }
+
+  .rom-upload-hint {
+    font-size: 13px;
   }
 
   /* 确保文件上传输入框在菜单组内有正确的布局 */
@@ -353,5 +418,9 @@ body {
 
   .menu-dropdown .row {
     gap: 10px;
+  }
+
+  .menu-dropdown .row + .row {
+    margin-top: 10px;
   }
 }

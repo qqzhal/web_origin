@@ -20,6 +20,49 @@ function getSharedAudioContext() {
     return _mainAudioContext;
 }
 
+// 全局静音：每个 AudioContext 一个 GainNode，所有输出节点统一经它连到 destination。
+// 静音在 Web Audio 图层面把增益直接置 0，立即生效且不依赖 JS 回调/页面节流，
+// AudioWorklet 与 ScriptProcessor 回退路径天然全覆盖（手机端同样有效）。
+const _muteGainEntries = []; // { actx, gain }
+window.__audioMuted = false;
+
+function getMuteGainNode(actx) {
+    if (!actx) return null;
+    let entry = null;
+    for (let i = 0; i < _muteGainEntries.length; i++) {
+        if (_muteGainEntries[i].actx === actx) { entry = _muteGainEntries[i]; break; }
+    }
+    if (!entry) {
+        const gain = actx.createGain();
+        gain.gain.value = window.__audioMuted ? 0 : 1;
+        gain.connect(actx.destination);
+        entry = { actx: actx, gain: gain };
+        _muteGainEntries.push(entry);
+    }
+    return entry.gain;
+}
+
+// 应用静音开关：muted=true 立即归零；取消静音用 20ms 快速平滑逼近，避免波形跳变爆音
+function applyAudioMute(muted) {
+    window.__audioMuted = !!muted;
+    for (let i = 0; i < _muteGainEntries.length; i++) {
+        const entry = _muteGainEntries[i];
+        try {
+            if (entry.actx.state === 'closed') continue;
+            if (window.__audioMuted) {
+                entry.gain.gain.value = 0;
+            } else {
+                const now = entry.actx.currentTime;
+                entry.gain.gain.cancelScheduledValues(now);
+                entry.gain.gain.setValueAtTime(entry.gain.gain.value, now);
+                entry.gain.gain.linearRampToValueAtTime(1, now + 0.02);
+            }
+        } catch (e) {}
+    }
+}
+window.getMuteGainNode = getMuteGainNode;
+window.applyAudioMute = applyAudioMute;
+
 // AudioWorkletProcessor code as string for offline compatibility
 const audioProcessorCode = `
 // AudioWorkletProcessor for audio processing
@@ -181,7 +224,8 @@ function AudioHandler() {
     if(!this.hasAudio) return;
 
     try {
-      if (_useAudioWorklet) {
+      // 部分浏览器或非安全上下文没有 audioWorklet，直接使用兼容回退路径。
+      if (_useAudioWorklet && this.actx.audioWorklet && typeof AudioWorkletNode === 'function') {
         await loadAudioWorklet(this.actx);
         this.workletNode = new AudioWorkletNode(this.actx, 'audio-processor');
         // 发送缓冲区大小
@@ -189,7 +233,7 @@ function AudioHandler() {
           type: 'bufferSize',
           size: this.bufferSize
         });
-        this.workletNode.connect(this.actx.destination);
+        this.workletNode.connect(getMuteGainNode(this.actx));
       } else {
         // 回退到 ScriptProcessorNode
         this.scriptNode = this.actx.createScriptProcessor(2048, 0, 1);
@@ -212,7 +256,7 @@ function AudioHandler() {
             this.readPos = (this.readPos + 1) % this.bufferSize;
           }
         };
-        this.scriptNode.connect(this.actx.destination);
+        this.scriptNode.connect(getMuteGainNode(this.actx));
       }
     } catch (e) {
       console.error('启动 AudioWorkletNode 失败', e);
@@ -328,12 +372,12 @@ function AudioHandler() {
   this.unpause = function() {
       if (this.workletNode && this.actx) {
           try {
-            this.workletNode.connect(this.actx.destination);
+            this.workletNode.connect(getMuteGainNode(this.actx));
           } catch(e) {}
       }
       if (this.scriptNode && this.actx) {
           try {
-            this.scriptNode.connect(this.actx.destination);
+            this.scriptNode.connect(getMuteGainNode(this.actx));
           } catch(e) {}
       }
   }
@@ -439,7 +483,7 @@ function ExternalAudioHandler() {
         return;
     }
     try {
-      if (_useAudioWorklet) {
+      if (_useAudioWorklet && this.actx.audioWorklet && typeof AudioWorkletNode === 'function') {
         await loadAudioWorklet(this.actx);
         this.workletNode = new AudioWorkletNode(this.actx, 'audio-processor');
         // 发送缓冲区大小
@@ -447,7 +491,7 @@ function ExternalAudioHandler() {
           type: 'bufferSize',
           size: this.bufferSize
         });
-        this.workletNode.connect(this.actx.destination);
+        this.workletNode.connect(getMuteGainNode(this.actx));
       } else {
         // 回退到 ScriptProcessorNode
         this.scriptNode = this.actx.createScriptProcessor(2048, 0, 1);
@@ -468,7 +512,7 @@ function ExternalAudioHandler() {
             this.readPos = (this.readPos + 1) % this.bufferSize;
           }
         };
-        this.scriptNode.connect(this.actx.destination);
+        this.scriptNode.connect(getMuteGainNode(this.actx));
       }
     } catch (e) {
         console.warn('ExternalAudioHandler.start error', e);

@@ -103,20 +103,45 @@ function Mapper195(nes, rom, header) {
     return { idx, offset };
   };
 
-  // 重写ppuRead/ppuWrite，查表决定访问CHRRAM还是CHRROM
+  // 预计算 CHR 物理映射（每 1KB 块：ROM 物理基址 + RAM 标记位）
+  this.chrRomBase = new Array(8);
+  this.chrRamBase = new Array(8);
+  this.chrRamSlots = 0; // 位标记，bit i=1 表示第 i 块映射到 CHRRAM
+
+  var mmc3UpdateChrPhysMap = this.updateChrPhysMap;
+  this.updateChrPhysMap = function () {
+    mmc3UpdateChrPhysMap.call(this);
+    let ramBits = 0;
+    for (let i = 0; i < 8; i++) {
+      let entry = this.chrPageTable[i];
+      if (entry.isRam) {
+        this.chrRamBase[i] = entry.offset;
+        ramBits |= (1 << i);
+      } else {
+        this.chrRomBase[i] = entry.offset;
+      }
+    }
+    this.chrRamSlots = ramBits;
+  };
+  // 构造函数中 reset(true) 先于快速表定义执行，这里补一次初始化，
+  // 确保首帧渲染前快速表与 chrPageTable 同步。
+  this.updateChrPhysMap();
+
+  // 重写ppuRead/ppuWrite/ppuPeak，查表决定访问CHRRAM还是CHRROM。
+  // 用位运算直接取 1KB 块号，避免每帧数万次调用时的对象分配与if-else。
   this.ppuRead = function (adr) {
     if (adr < 0x2000) {
       if ((this.lastRead & 0x1000) === 0 && (adr & 0x1000) > 0) {
         this.clockIrq();
       }
       this.lastRead = adr;
-      let { idx, offset } = this.getChrAdr(adr);
-      let entry = this.chrPageTable[idx];
-      if (entry.isRam) {
-        return this.chrRam[(entry.offset + offset) & 0xfff];
-      } else {
-        return this.chrRom[((entry.offset + offset) & this.h.chrAnd)];
+      if (this.chrMode === 1) adr ^= 0x1000;
+      let slot = (adr >> 10) & 7;
+      let off = adr & 0x3ff;
+      if ((this.chrRamSlots >> slot) & 1) {
+        return this.chrRam[(this.chrRamBase[slot] + off) & 0xfff];
       }
+      return this.chrRom[(this.chrRomBase[slot] + off) & this.h.chrAnd];
     } else {
       return this.ppuRam[this.getMirroringAdr(adr)];
     }
@@ -124,10 +149,10 @@ function Mapper195(nes, rom, header) {
 
   this.ppuWrite = function (adr, value) {
     if (adr < 0x2000) {
-      let { idx, offset } = this.getChrAdr(adr);
-      let entry = this.chrPageTable[idx];
-      if (entry.isRam) {
-        this.chrRam[(entry.offset + offset) & 0xfff] = value;
+      if (this.chrMode === 1) adr ^= 0x1000;
+      let slot = (adr >> 10) & 7;
+      if ((this.chrRamSlots >> slot) & 1) {
+        this.chrRam[(this.chrRamBase[slot] + (adr & 0x3ff)) & 0xfff] = value;
       }
     } else {
       this.ppuRam[this.getMirroringAdr(adr)] = value;
@@ -137,13 +162,13 @@ function Mapper195(nes, rom, header) {
   // 补充ppuPeak，调试器用
   this.ppuPeak = function (adr) {
     if (adr < 0x2000) {
-      let { idx, offset } = this.getChrAdr(adr);
-      let entry = this.chrPageTable[idx];
-      if (entry.isRam) {
-        return this.chrRam[(entry.offset + offset) & 0xfff];
-      } else {
-        return this.chrRom[((entry.offset + offset) & this.h.chrAnd)];
+      if (this.chrMode === 1) adr ^= 0x1000;
+      let slot = (adr >> 10) & 7;
+      let off = adr & 0x3ff;
+      if ((this.chrRamSlots >> slot) & 1) {
+        return this.chrRam[(this.chrRamBase[slot] + off) & 0xfff];
       }
+      return this.chrRom[(this.chrRomBase[slot] + off) & this.h.chrAnd];
     } else {
       return this.ppuRam[this.getMirroringAdr(adr)];
     }
@@ -202,6 +227,14 @@ function Mapper195(nes, rom, header) {
     return this.h.battery;
   };
 
+  // 读档还原后重建 CHR 快速映射表，避免条目不同步
+  var mmc3SetHackState = this.setHackState;
+  this.setHackState = function (state) {
+    var ret = mmc3SetHackState.call(this, state);
+    this.updateChrPhysMap();
+    return ret;
+  };
+
   this.getChrPageAndTile = function (ppuAddr) {
     if (ppuAddr < 0x2000) {
       // 获取 CHR 地址
@@ -217,6 +250,12 @@ function Mapper195(nes, rom, header) {
       return null;
     }
   };
+
+  // 扩展状态必须随存档保存/恢复：
+  // - extraPrgRam 存放 hack 代码（$5000-$5FFF），reset 时会随机化，
+  //   若读档不恢复，刚载入游戏后读档会执行垃圾代码导致异常
+  // - chrBankSelect / chrPageTable 是 CHR 物理映射状态
+  this.saveVars = this.saveVars.concat(["extraPrgRam", "chrBankSelect", "chrPageTable"]);
 
 }
 

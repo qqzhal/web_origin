@@ -4,10 +4,10 @@ const defaultKeyMap = {
   down: 's',
   left: 'a',
   right: 'd',
-  select: 'f',
-  start: 'g',
+  select: 'g',
+  start: 'h',
   b: 'k',
-  a: 'j'
+  a: 'l'
 };
 const defaultKeyMap2 = {
   up: '↑',
@@ -132,6 +132,8 @@ function bindKeyEvents() {
       return;
     }
     if (key === commonKeyMap.turbo) {
+      // 记住按下前的档位，松开时恢复（否则会把 +/- 设好的档位归 1）
+      if (!e.repeat) window._turboBeforeHold = window.turboSpeed || 1;
       if (window.setTurboSpeed) window.setTurboSpeed(true);
       e.preventDefault();
       return;
@@ -159,7 +161,12 @@ function bindKeyEvents() {
 
     // turbo松开
     if (key === commonKeyMap.turbo) {
-      if (window.setTurboSpeed) window.setTurboSpeed(false);
+      if (window.setTurboSpeed) {
+        const restore = (typeof window._turboBeforeHold === 'number') ? window._turboBeforeHold : 1;
+        window.setTurboSpeed(restore);
+        const lbl = document.querySelector('#turboBtnOverlay .toolbar-label');
+        if (lbl) lbl.textContent = restore + 'X';
+      }
       e.preventDefault();
       return;
     }

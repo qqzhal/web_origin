@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<!--
+  存档格式双向转换页（独立工具，不依赖登录/服务器）
+  - FCEUX/nes.emu 存档 (.fc0~.fc9/.fc2)  →  web 模拟器 saveState（JSON 下载 / 写入本地 IndexedDB 槽位）
+  - web 模拟器 saveState（JSON / 本地 IndexedDB 槽位）  →  FCEUX 存档 (.fc0 下载)
+  转换核心：同目录 fc0conv.js（字段映射与历史事故说明见该文件头注释）。
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FCEUX ↔ Web 存档转换</title>
+<style>
+  body { font: 14px/1.6 system-ui, "Microsoft YaHei", sans-serif; max-width: 1060px; margin: 20px auto; padding: 0 12px; color: #23272d; background: #f6f7f9; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  .hint { color: #5c6670; font-size: 12.5px; margin: 6px 0 14px; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 900px) { .cols { grid-template-columns: 1fr; } }
+  .panel { background: #fff; border: 1px solid #e3e6ea; border-radius: 12px; padding: 14px 16px; }
+  .panel h2 { font-size: 15px; margin: 0 0 10px; }
+  button { padding: 7px 14px; border: 1px solid #d8dde3; background: #2f6fed; color: #fff; border-radius: 8px; font-size: 13.5px; cursor: pointer; }
+  button.secondary { background: #fff; color: #23272d; }
+  button:disabled { opacity: .5; cursor: default; }
+  select, input[type=text] { padding: 7px 9px; border: 1px solid #d8dde3; border-radius: 8px; font-size: 13.5px; background: #fff; color: #23272d; max-width: 100%; }
+  .row { margin: 9px 0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .msg { min-height: 20px; white-space: pre-wrap; margin: 10px 0 0; font-size: 13px; color: #5c6670; }
+  .msg.ok { color: #167a2c; } .msg.err { color: #c22; }
+  pre.out { background: #0f1418; color: #9fd0a0; padding: 10px; border-radius: 8px; font-size: 12px; max-height: 220px; overflow: auto; margin: 8px 0 0; }
+  .slotline { font-size: 13px; color: #5c6670; }
+  hr { border: none; border-top: 1px solid #eef0f3; margin: 12px 0; }
+</style>
+</head>
+<body>
+<h1>FCEUX ↔ Web 存档转换</h1>
+<div class="hint">
+  FCEUX / nes.emu 的即时存档（.fc0~.fc9、.fc2，同格式）与本站 web 模拟器的即时存档（saveState）双向转换。
+  转换原理与字段映射见同目录 fc0conv.js 头部注释。FCEUX 存档不含游戏名，跨模拟器使用前请确认是同一 ROM。<br>
+  注意：直接「写入本地槽位 / 从本地槽位导出」操作的是<b>本浏览器</b> IndexedDB（NesSaveDB），操作前请先关闭正在运行的模拟器页面。
+</div>
+
+<div class="cols">
+  <!-- 方向一：FCEUX → web -->
+  <div class="panel">
+    <h2>① FCEUX/VirtuaNES 存档 → Web 存档</h2>
+    <div class="row">
+      <button id="pickFc0">选择存档文件</button>
+      <span class="slotline" id="fc0Name">未选择（支持 .fc0~.fc9 / .st0~.st9，按扩展名自动识别）</span>
+    </div>
+    <div id="fc0Info"></div>
+    <div class="row">
+      <button id="dlJson" disabled>下载 Web 存档 JSON</button>
+    </div>
+    <hr>
+    <div class="row">
+      <span>或直接写入本地槽位：</span>
+      <select id="importSlot"></select>
+      <button id="writeSlot" disabled>写入</button>
+    </div>
+    <div class="msg" id="msg1"></div>
+  </div>
+
+  <!-- 方向二：web → FCEUX/VirtuaNES -->
+  <div class="panel">
+    <h2>② Web 存档 → FCEUX/VirtuaNES 存档</h2>
+    <div class="row">
+      <span>来源：</span>
+      <select id="srcKind">
+        <option value="db">本地槽位</option>
+        <option value="json">JSON 文件</option>
+      </select>
+      <select id="dbSlot"></select>
+      <button id="pickJson" style="display:none">选择 JSON 文件</button>
+      <button id="loadDb" style="display:none">读取</button>
+      <span>导出格式：</span>
+      <select id="outFmt">
+        <option value="fc0">FCEUX (.fc0)</option>
+        <option value="st0">VirtuaNES (.st0)</option>
+      </select>
+    </div>
+    <div id="webInfo"></div>
+    <div class="row">
+      <button id="dlFc0" disabled>下载存档文件</button>
+      <span class="slotline">下载后放入对应模拟器的存档目录</span>
+    </div>
+    <div class="msg" id="msg2"></div>
+  </div>
+</div>
+
+<script src="fc0conv.js"></script>
+<script src="vnesconv.js"></script>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var converted = null;      // 方向一结果: web saveState 对象
+  var fc0FileName = '';
+  var webSource = null;      // 方向二结果: web saveState 对象
+  var webSourceName = '';
+  var dbSlots = [];          // 本地 IndexedDB 存档列表
+
+  function setMsg(id, text, cls) { var m = $(id); m.textContent = text || ''; m.className = 'msg' + (cls ? ' ' + cls : ''); }
+  function fmtSize(n) { return n > 1048576 ? (n / 1048576).toFixed(2) + ' MB' : (n / 1024).toFixed(1) + ' KB'; }
+
+  // ---------- zlib（浏览器原生 CompressionStreams） ----------
+  function browserInflate(u8) {
+    var ds = new DecompressionStream('deflate');
+    return new Response(new Blob([u8]).stream().pipeThrough(ds)).arrayBuffer().then(function (ab) { return new Uint8Array(ab); });
+  }
+  function browserDeflate(u8) {
+    var cs = new CompressionStream('deflate');
+    return new Response(new Blob([u8]).stream().pipeThrough(cs)).arrayBuffer().then(function (ab) { return new Uint8Array(ab); });
+  }
+
+  // ---------- 本地 IndexedDB（与模拟器同一库 NesSaveDB/saveSlots） ----------
+  var DB_NAME = 'NesSaveDB', STORE = 'saveSlots';
+  function openDB() {
+    return new Promise(function (res, rej) {
+      var req = indexedDB.open(DB_NAME);   // 不传版本号，沿用现有库
+      req.onsuccess = function () {
+        var db = req.result;
+        if (!db.objectStoreNames.contains(STORE)) { db.close(); res(null); return; }
+        res(db);
+      };
+      req.onerror = function () { rej(req.error); };
+    });
+  }
+  function loadDbSlots() {
+    return openDB().then(function (db) {
+      if (!db) { dbSlots = []; return; }
+      return new Promise(function (res, rej) {
+        var req = db.transaction(STORE, 'readonly').objectStore(STORE).getAll();
+        req.onsuccess = function () { db.close(); dbSlots = (req.result || []).filter(function (it) { return it && it.saveState; }); res(); };
+        req.onerror = function () { db.close(); rej(req.error); };
+      });
+    });
+  }
+  function dbPut(record) {
+    return openDB().then(function (db) {
+      if (!db) throw new Error('本地没有 NesSaveDB 存档库，请先打开模拟器存一次档');
+      return new Promise(function (res, rej) {
+        var tx = db.transaction(STORE, 'readwrite');
+        tx.objectStore(STORE).put(record);
+        tx.oncomplete = function () { db.close(); res(); };
+        tx.onerror = function () { db.close(); rej(tx.error); };
+        tx.onabort = function () { db.close(); rej(tx.error || new Error('事务中止')); };
+      });
+    });
+  }
+  function fillSlotSelect(sel, items, defLabel) {
+    sel.innerHTML = '';
+    if (!items.length) {
+      var o = document.createElement('option'); o.textContent = defLabel || '（无存档）'; o.value = ''; sel.appendChild(o); return;
+    }
+    items.forEach(function (it, i) {
+      var o = document.createElement('option');
+      o.value = String(i);
+      o.textContent = (it.romName || '(未知游戏)') + ' — 槽位 ' + it.slot + '（' + (it.timestamp || '') + '）';
+      sel.appendChild(o);
+    });
+  }
+  function slotLabel(slot) { return (typeof slot === 'string' && slot.indexOf('-1_') === 0) ? '自动' : slot; }
+  function findSlot(i) { return dbSlots[i] || null; }
+
+  // 下载辅助
+  function download(u8OrStr, fname, mime) {
+    var blob = typeof u8OrStr === 'string' ? new Blob([u8OrStr], { type: mime || 'application/json' }) : new Blob([u8OrStr], { type: 'application/octet-stream' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = fname;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+  }
+  function safeName(s) { return String(s || 'game').replace(/[\\/:*?"<>|]/g, '_'); }
+
+  // ============ 方向一：FCEUX → web ============
+  $('pickFc0').onclick = function () {
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.fc0,.fc1,.fc2,.fc3,.fc4,.fc5,.fc6,.fc7,.fc8,.fc9,.fc,.st0,.st1,.st2,.st3,.st4,.st5,.st6,.st7,.st8,.st9';
+    input.onchange = function () {
+      var f = input.files && input.files[0];
+      if (!f) return;
+      var isVnes = /\.st\d?$/i.test(f.name);
+      fc0FileName = f.name;
+      $('fc0Name').textContent = f.name + '（' + fmtSize(f.size) + (isVnes ? '，VirtuaNES）' : '，FCEUX）');
+      setMsg('msg1', '转换中...');
+      var reader = new FileReader();
+      reader.onerror = function () { setMsg('msg1', '读取文件失败。', 'err'); };
+      reader.onload = function () {
+        var prevSlot = findSlot(parseInt($('importSlot').value, 10));
+        var prev = (prevSlot && prevSlot.saveState && prevSlot.saveState.header) ? prevSlot.saveState : null;
+        var work, summary;
+        if (isVnes) {
+          work = Promise.resolve().then(function () {
+            var parsed = VnesConv.parseSt0(reader.result);   // .st0 无压缩，同步解析
+            converted = VnesConv.st0ToWebState(parsed, prev);
+            summary = 'CRC=$' + (converted.vnesRomCrc || 0).toString(16).toUpperCase() +
+              '  bankRegs=[' + converted.mapper.bankRegs.join(',') + ']' +
+              '\nextraPrgRam($5000): 前4字节 ' + (converted.mapper.extraPrgRam || []).slice(0, 4).join(',') +
+              '\n镜像: ' + (converted.mapper.mirroring === 0 ? '垂直' : '水平') +
+              '  CHR RAM: ' + (converted.mapper.chrRam ? '有' : '无');
+          });
+        } else {
+          work = Fc0Conv.parseFc0(reader.result, browserInflate).then(function (parsed) {
+            converted = Fc0Conv.fc0ToWebState(parsed, prev);
+            var c = Fc0Conv.collectSformat(parsed).sf;
+            var pc = c.PC ? (c.PC[0] | (c.PC[1] << 8)) : 0;
+            summary = 'PC=$' + pc.toString(16).toUpperCase() +
+              '  bankRegs=[' + converted.mapper.bankRegs.join(',') + ']' +
+              '\nextraPrgRam($5000): 前4字节 ' + (converted.mapper.extraPrgRam || []).slice(0, 4).join(',') +
+              '\n镜像: ' + (converted.mapper.mirroring === 0 ? '垂直' : '水平') +
+              '  CHR RAM: ' + (converted.mapper.chrRam ? '有' : '无') +
+              (prev ? '\n（镜像位取自本地槽位「' + (prevSlot.romName || '') + '」的 ROM header）' : '\n（无本地槽位可参考，镜像沿用 FCEUX 的 A000 值）');
+          });
+        }
+        work.then(function () {
+          $('fc0Info').innerHTML = '<pre class="out">' + summary + '</pre>';
+          $('dlJson').disabled = false;
+          $('writeSlot').disabled = !($('importSlot').value !== '');
+          setMsg('msg1', '转换成功（' + (isVnes ? 'VirtuaNES' : 'FCEUX') + ' → Web）。可下载 JSON，或直接写入本地槽位。', 'ok');
+        }).catch(function (e) {
+          converted = null;
+          $('dlJson').disabled = true; $('writeSlot').disabled = true;
+          setMsg('msg1', '转换失败：' + e.message, 'err');
+        });
+      };
+      reader.readAsArrayBuffer(f);
+    };
+    input.click();
+  };
+
+  $('dlJson').onclick = function () {
+    if (!converted) return;
+    download(JSON.stringify(converted, null, 1), safeName(fc0FileName.replace(/\.[^.]+$/, '')) + '.webstate.json');
+    setMsg('msg1', 'JSON 已下载。注意：此文件仅供备份/查看，模拟器页面不直接读取 JSON，写回游戏请用「写入本地槽位」。', 'ok');
+  };
+
+  $('writeSlot').onclick = function () {
+    if (!converted) return;
+    var it = findSlot(parseInt($('importSlot').value, 10));
+    if (!it) { setMsg('msg1', '请先选择目标槽位。', 'err'); return; }
+    if (!confirm('将覆盖槽位 ' + slotLabel(it.slot) + ' 的《' + (it.romName || '(未知游戏)') + '》存档（原时间 ' + (it.timestamp || '') + '）。\n请确认 FCEUX 存档（' + fc0FileName + '）与它是同一游戏！\n\n继续？')) return;
+    var record = {
+      slot: it.slot, romName: it.romName || '', timestamp: new Date().toLocaleString(),
+      screenshot: it.screenshot || '', saveState: converted, customMusicState: it.customMusicState || null
+    };
+    dbPut(record).then(function () {
+      setMsg('msg1', '已写入槽位 ' + slotLabel(it.slot) + '。刷新模拟器页面后即可读档。', 'ok');
+      return loadDbSlots().then(refreshSlotSelects);
+    }).catch(function (e) { setMsg('msg1', '写入失败：' + e.message, 'err'); });
+  };
+
+  // ============ 方向二：web → FCEUX ============
+  $('srcKind').onchange = function () {
+    var isDb = $('srcKind').value === 'db';
+    $('dbSlot').style.display = isDb ? '' : 'none';
+    $('loadDb').style.display = isDb ? '' : 'none';
+    $('pickJson').style.display = isDb ? 'none' : '';
+    if (isDb) loadSelectedDbSlot();
+  };
+  function loadSelectedDbSlot() {
+    var it = findSlot(parseInt($('dbSlot').value, 10));
+    if (!it) { setMsg('msg2', '本地没有可选存档。', 'err'); $('dlFc0').disabled = true; return; }
+    useWebSource(it.saveState, (it.romName || 'game') + ' 槽' + slotLabel(it.slot));
+  }
+  $('dbSlot').onchange = loadSelectedDbSlot;
+  $('loadDb').onclick = loadSelectedDbSlot;
+  $('pickJson').onclick = function () {
+    var input = document.createElement('input');
+    input.type = 'file'; input.accept = '.json,application/json';
+    input.onchange = function () {
+      var f = input.files && input.files[0];
+      if (!f) return;
+      var reader = new FileReader();
+      reader.onload = function () {
+        try {
+          var obj = JSON.parse(reader.result);
+          if (obj && obj.saveState && obj.saveState.cpu) obj = obj.saveState;   // 兼容 index.php 上传格式的记录包装
+          useWebSource(obj, f.name);
+        } catch (e) { setMsg('msg2', 'JSON 解析失败：' + e.message, 'err'); }
+      };
+      reader.readAsText(f);
+    };
+    input.click();
+  };
+  function useWebSource(state, name) {
+    if (!state || !state.cpu || !state.ppu || !state.mapper) {
+      setMsg('msg2', '不是有效的 web 存档（缺少 cpu/ppu/mapper）。', 'err'); return;
+    }
+    webSource = state; webSourceName = name;
+    $('webInfo').innerHTML = '<pre class="out">' +
+      'PC=$' + ((state.cpu.br ? state.cpu.br[0] : 0)).toString(16).toUpperCase() +
+      '  bankRegs=[' + (state.mapper.bankRegs || []).join(',') + ']' +
+      '\nextraPrgRam($5000): ' + (state.mapper.extraPrgRam ? '有（mapper195 类）' : '无') +
+      '\n镜像: ' + (state.mapper.mirroring === 0 ? '垂直' : '水平') +
+      '</pre>';
+    $('dlFc0').disabled = false;
+    setMsg('msg2', '来源就绪：' + name, 'ok');
+  }
+  $('dlFc0').onclick = function () {
+    if (!webSource) return;
+    var fmt = $('outFmt').value;
+    setMsg('msg2', '转换中...');
+    Promise.resolve().then(function () {
+      if (fmt === 'st0') {
+        var u8 = VnesConv.webStateToSt0(webSource);
+        var fname = safeName(webSourceName) + '.st0';
+        download(u8, fname);
+        setMsg('msg2', '已下载 ' + fname + '。放入 VirtuaNES 的存档目录即可读档（.st0 对应其状态槽 0）。' +
+          (webSource.vnesRomCrc ? '' : '注意：该存档没有 ROM 校验值，VirtuaNES 读档时可能提示 CRC 不一致。'), 'ok');
+        return;
+      }
+      var stream = Fc0Conv.webStateToFcsxChunks(webSource);
+      return Fc0Conv.fcsxWrap(stream, browserDeflate).then(function (u8) {
+        var fname = safeName(webSourceName) + '.fc0';
+        download(u8, fname);
+        setMsg('msg2', '已下载 ' + fname + '。放入 FCEUX 的 savestates 目录即可读档。', 'ok');
+      });
+    }).catch(function (e) { setMsg('msg2', '转换失败：' + e.message, 'err'); });
+  };
+
+  // ---------- 初始化 ----------
+  function refreshSlotSelects() {
+    fillSlotSelect($('importSlot'), dbSlots, '（本地无存档）');
+    fillSlotSelect($('dbSlot'), dbSlots, '（本地无存档）');
+    $('writeSlot').disabled = !converted || !$('importSlot').value;
+    if (dbSlots.length && $('srcKind').value === 'db') loadSelectedDbSlot();   // 默认自动加载第一个槽
+  }
+  loadDbSlots().then(function () {
+    refreshSlotSelects();
+    if (!dbSlots.length) setMsg('msg2', '提示：本浏览器还没有模拟器存档（NesSaveDB），仍可用 JSON 文件方式转换。');
+  }).catch(function (e) { setMsg('msg2', '读取本地存档失败：' + e.message, 'err'); });
+})();
+</script>
+</body>
+</html>

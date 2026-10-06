@@ -265,6 +265,8 @@ function Nes() {
   this.setCT2Cheats = function (ct2Cheats) {
     this.cheatCodes_ct2 = ct2Cheats;
     this.updateCheatMaps();
+    // 勾选后立即写入一次，不必等下一帧（暂停状态下也能生效）
+    if (this.applyCT2RamLocks) this.applyCT2RamLocks();
   };
 
   this.reset = function (hard) {
@@ -433,8 +435,17 @@ function Nes() {
     };
     o["base"] = 16 + (o.trainer ? 512 : 0);
     o["chrBase"] = o.base + 0x4000 * o.banks;
-    o["prgAnd"] = (o.banks * 0x4000) - 1;
-    o["chrAnd"] = o.chrBanks === 0 ? 0x1fff : (o.chrBanks * 0x2000) - 1;
+    // PRG/CHR 掩码必须是全 1 位模式（2 的幂 - 1），
+    // 否则当 bank 数不是 2 的幂时（如 80 个 PRG bank），
+    // bank 偏移会被按位与错误截断，导致大容量 hack ROM 无法运行。
+    let prgSizeBytes = o.banks * 0x4000;
+    o["prgAnd"] = (1 << Math.ceil(Math.log2(prgSizeBytes))) - 1;
+    if (o.chrBanks === 0) {
+      o["chrAnd"] = 0x1fff;
+    } else {
+      let chrSizeBytes = o.chrBanks * 0x2000;
+      o["chrAnd"] = (1 << Math.ceil(Math.log2(chrSizeBytes))) - 1;
+    }
     o["saveVars"] = [
       "banks", "chrBanks", "mapper", "verticalMirroring", "battery", "trainer",
       "fourScreen"
@@ -526,20 +537,33 @@ function Nes() {
     do {
       this.cycle()
     } while (!(this.ppu.line === 240 && this.ppu.dot === 0));
+    this.applyCT2RamLocks();
   }
+
+  // CT2 金手指采用"冻结 RAM"语义：启用期间每帧把数值写回真实内存（关闭后停止写入，内存保留最后的值），
+  // 这样即时存档保存的就是修改后的数据。直接写 ram / mapper 而不走 this.write，避免每帧触发调试器写断点。
+  this.applyCT2RamLocks = function () {
+    if (this.cheatMap_ct2.size === 0) return;
+    for (const [adr, code] of this.cheatMap_ct2) {
+      if (code.compare !== undefined && this.ram[adr & 0x7ff] !== code.compare) continue;
+      if (adr < 0x2000) {
+        this.ram[adr & 0x7ff] = code.value;
+      } else if (adr >= 0x6000 && this.mapper) {
+        this.mapper.write(adr, code.value);
+      }
+    }
+  };
 
   // peak
   this.peak = function (adr) {
     adr &= 0xffff;
 
-    // 应用所有启用的金手指
-    let code = this.cheatMap.get(adr);
-    if (code && (code.compare === undefined || this.ram[adr & 0x7ff] === code.compare)) {
-      return code.value;
-    }
-    code = this.cheatMap_ct2.get(adr);
-    if (code && (code.compare === undefined || this.ram[adr & 0x7ff] === code.compare)) {
-      return code.value;
+    // 应用所有启用的金手指（size 短路：未启用金手指时免掉每次地址访问的 Map 查找）
+    if (this.cheatMap.size !== 0) {
+      let code = this.cheatMap.get(adr);
+      if (code && (code.compare === undefined || this.ram[adr & 0x7ff] === code.compare)) {
+        return code.value;
+      }
     }
 
     if (adr < 0x2000) {
@@ -567,16 +591,16 @@ function Nes() {
   // cpu read
   this.read = function (adr) {
     adr &= 0xffff;
-    if (this.onread) this.onread(adr, this.peak(adr));
+    // 调试钩子只传地址；断点触发时由回调按需取值，
+    // 避免每次读内存都先跑一遍完整 peak 路径（手机端每次读取的开销减半）
+    if (this.onread) this.onread(adr);
 
-    // 应用所有启用的金手指
-    let code = this.cheatMap.get(adr);
-    if (code && (code.compare === undefined || this.ram[adr & 0x7ff] === code.compare)) {
-      return code.value;
-    }
-    code = this.cheatMap_ct2.get(adr);
-    if (code && (code.compare === undefined || this.ram[adr & 0x7ff] === code.compare)) {
-      return code.value;
+    // 应用所有启用的金手指（size 短路：未启用金手指时免掉 Map 查找）
+    if (this.cheatMap.size !== 0) {
+      let code = this.cheatMap.get(adr);
+      if (code && (code.compare === undefined || this.ram[adr & 0x7ff] === code.compare)) {
+        return code.value;
+      }
     }
 
     if (adr < 0x2000) {
@@ -714,8 +738,11 @@ function Nes() {
     let ppuObj = this.getObjState(this.ppu);
     // Use APU's custom getSaveState method to handle non-serializable functions
     let apuObj = this.apu.getSaveState ? this.apu.getSaveState() : this.getObjState(this.apu);
-    // 如果是 hack ROM，则调用专用方法，否则调用通用 getObjState
-    let mapperObj = (this.mapper._virtuaNESHack && typeof this.mapper.getHackState === 'function') ?
+    // 如果 mapper 提供完整的 hack 状态保存方法（含扩展 RAM、自动检测状态等），
+    // 则优先使用，否则退化为通用 getObjState。
+    // 不限于 _virtuaNESHack：只要 mapper 实现了 getHackState 就代表它声明了完整状态，
+    // 例如 Mapper195 的 extraPrgRam 也在 saveVars 中，需要一并保存。
+    let mapperObj = (typeof this.mapper.getHackState === 'function') ?
       this.mapper.getHackState() : this.getObjState(this.mapper);
     let headerObj = this.getObjState(this.mapper.h);
     let final = this.getObjState(this);
@@ -738,8 +765,8 @@ function Nes() {
       this.setObjState(this.ppu, state.ppu);
       this.setObjState(this.apu, state.apu);
       if (this.mapper) {
-        if (this.mapper._virtuaNESHack && typeof this.mapper.setHackState === 'function') {
-          // 使用 hack ROM 专用的状态还原方法，同时内部处理映射问题
+        if (typeof this.mapper.setHackState === 'function') {
+          // 使用 mapper 提供的完整状态还原方法（含扩展 RAM、自动检测状态）
           this.mapper.setHackState(state.mapper);
         } else {
           this.setObjState(this.mapper, state.mapper);
@@ -773,6 +800,7 @@ function Nes() {
 
   // 修改 setObjState，也专门处理 ram 数据（还原 0x8000 范围的数据）
   this.setObjState = function (obj, save) {
+    if (!save) return;
     for (let i = 0; i < obj.saveVars.length; i++) {
       let name = obj.saveVars[i];
       if (name === "ram") {
@@ -787,6 +815,8 @@ function Nes() {
         }
       } else {
         let val = obj[name];
+        // 旧版本存档可能缺少新加入的字段：跳过，保留当前值（避免恢复成空/undefined）
+        if (save[name] === undefined) continue;
         if (val instanceof Uint8Array) {
           obj[name] = new Uint8Array(save[name]);
         } else if (val instanceof Uint16Array) {

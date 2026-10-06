@@ -1,16 +1,13 @@
 // 恢复自定义音乐状态的全局函数
+// 不再强制 enableCustomMusic()：自定义音乐开关完全由用户在"自定义音轨"面板决定。
+// 功能未启用时 playNsfMusic 内部守卫会直接返回，读档不会自己出声；
+// 已启用时仍按存档记录的 code 正常恢复播放。
 function restoreCustomMusicState(customMusicState) {
     if (!customMusicState || typeof customMusicState !== 'object' || !window.customMusicMonitor) {
         return;
     }
 
-    // 启用自定义音乐（如果未启用）
-    if (typeof window.enableCustomMusic === 'function') {
-        window.enableCustomMusic();
-    } else {
-    }
-
-    // 如果有外部音乐在播放，恢复它
+    // 如果存档记录外部音乐在播放，尝试恢复它
     if (customMusicState.externalActive && customMusicState.externalCode) {
 
         // 找到对应的映射
@@ -164,6 +161,12 @@ function restoreCustomMusicState(customMusicState) {
                 callback(e, []);
             };
         });
+    }
+
+    // 同步下载后强制清空缓存，避免恢复槽位时读到同步前的旧列表
+    function clearCache() {
+        saveSlotsCache = null;
+        cacheTimestamp = 0;
     }
 
     // 在现有的 SaveManager 模块中添加新方法
@@ -326,6 +329,7 @@ function restoreCustomMusicState(customMusicState) {
         init: init,
         updateSaveSlot: updateSaveSlot,
         getAllSaveSlots: getAllSaveSlots,
+        clearCache: clearCache,
         getDefaultSlot: getDefaultSlot,
         setDefaultSlot: setDefaultSlot,
         updateSaveData: updateSaveData,

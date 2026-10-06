@@ -469,7 +469,7 @@
             }
         };
 
-        gmeScriptNode.connect(gmeAudioContext.destination);
+        gmeScriptNode.connect(getMuteGainNode(gmeAudioContext));
         currentNsfPlayer = gmeScriptNode; // 为了兼容 stopMusic
     }
 
@@ -666,7 +666,7 @@
                                 try { stopUiNsf(); } catch (e) { }
                             }
                         };
-                        gmeUiScriptNode.connect(gmeAudioContext.destination);
+                        gmeUiScriptNode.connect(getMuteGainNode(gmeAudioContext));
                         uiNsfPlayer = gmeUiScriptNode;
                         uiCurrentNsfPath = nsfPath;
                         uiCurrentTrack = trackIndex;
@@ -813,7 +813,7 @@
     // 可配置选项（将来可暴露于 UI）
     const customMusicOptions = {
         // 如果 true，则允许游戏自行停止外部音乐（旧行为）。false 则默认阻止非手动写入停止外部音乐。
-        allowGameToStopExternal: false
+        allowGameToStopExternal: false,
     };
 
     function monitorMemoryWrite(address, value) {
@@ -836,6 +836,19 @@
         const isMappedSe = !!(mapping && mapping.type === 'se');
         const isValueBgmByThreshold = val >= 0x32; // 来自汇编的阈值判断
         const incomingIsBgm = isMappedBgm || (!mapping && isValueBgmByThreshold) || (mapping && mapping.type === undefined && isValueBgmByThreshold) || (mapping && mapping.type === 'bgm');
+
+        // 调试输出：非 SE 的写入（含未映射、自定义 type）与停止命令打印到控制台，
+        // 便于观察球权切换时的命令序列。只挡 type:'se' 的音效防刷屏，
+        // 其余 type（bgm/未写/自定义值）一律打印，并附带实际 type 值方便核对。
+        if (window.__cmDebug && (val >= 0x32 || val === 0x01) && !(mapping && mapping.type === 'se')) {
+            if (val === 0x01) {
+                console.log(`[自定义音乐] $0700 ← 0x01（停止命令）`);
+            } else if (mapping) {
+                console.log(`[自定义音乐] $0700 ← 0x${hexValue} - ${mapping.note || mapping.name || '已映射'} (type:${mapping.type})`);
+            } else {
+                console.log(`[自定义音乐] $0700 ← 0x${hexValue}（未映射）`);
+            }
+        }
 
         // 如果写入正要触发 BGM：
         if (incomingIsBgm) {
@@ -1282,7 +1295,12 @@
         enabledCheckbox.onchange = function () {
             const wasEnabled = customMusicEnabled;
             customMusicEnabled = this.checked;
-            
+            // 按当前游戏名记住勾选状态（该功能针对游戏，换游戏默认关闭）
+            try {
+                const storeKey = loadedName ? ('customMusicEnabled_' + loadedName) : 'customMusicEnabled_global';
+                localStorage.setItem(storeKey, this.checked ? '1' : '0');
+            } catch (e) {}
+
             // 如果刚启用，开始预加载所有NSF文件
             if (customMusicEnabled && !wasEnabled) {
                   log(`自定义音乐功能${customMusicEnabled ? '已启用' : '已禁用'}`, 'music');
@@ -1496,7 +1514,8 @@
 
     // 加载设置
     function loadSettings() {
-        // 自定义音乐默认禁用
+        // 自定义音乐默认禁用；开关按游戏名各自记住（见 restoreCustomMusicEnabledForGame），
+        // 在 ROM 载入时恢复，避免跨游戏误开启
         customMusicEnabled = false;
 
         // 强制使用 GME 引擎（忽略 localStorage 中的设置）
@@ -1628,7 +1647,7 @@
                             if (gmeAudioContext.state === 'suspended' && typeof gmeAudioContext.resume === 'function') {
                                 gmeAudioContext.resume().catch(() => { });
                             }
-                            gmeScriptNode.connect && gmeScriptNode.connect(gmeAudioContext.destination);
+                            gmeScriptNode.connect && gmeScriptNode.connect(getMuteGainNode(gmeAudioContext));
                         } catch (e) {
                             // 重连失败，尝试重建播放节点
                             try { playGmeBackground(); } catch (ee) { console.warn('playGmeBackground failed', ee); }
@@ -1644,6 +1663,19 @@
             }
         };
         window.getMusicStatus = getMusicStatus;
+        // 按 ROM 名恢复"启用自定义音乐功能"开关：该设置按游戏各自记住，未记录的游戏默认关闭。
+        // 由 dbmain.js 在 ROM 载入完成后调用，须在读档恢复音乐现场之前执行。
+        window.restoreCustomMusicEnabledForGame = function (gameName) {
+            let on = false;
+            try { on = !!gameName && localStorage.getItem('customMusicEnabled_' + gameName) === '1'; } catch (e) {}
+            customMusicEnabled = on;
+            if (on) {
+                preloadAllNsfFiles().catch(function (error) {
+                    console.error('NSF文件预加载失败:', error);
+                });
+            }
+            return on;
+        };
         window.enableCustomMusic = function () { customMusicEnabled = true; };
         window.playNsfMusic = playNsfMusic;
         window.musicMappings = musicMappings;

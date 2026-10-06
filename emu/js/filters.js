@@ -33,6 +33,7 @@ let nstcProgram = null;
 let palProgram = null;
 // 可重用的 RGB 临时纹理，避免每帧创建/删除纹理
 let reusableRgbTexture = null;
+let reusableRgbData = null;
 let sixBufferProgram = null;
 let paletteTexture = null;
 
@@ -744,7 +745,10 @@ function renderWithFilter() {
 
   // 将 RGBA 数据转换为 RGB 数据 (去掉 alpha 通道)
   const rgbaData = window.imgData.data;
-  const rgbData = new Uint8Array(256 * 240 * 3); // RGB 数据
+  if (!reusableRgbData || reusableRgbData.length !== 256 * 240 * 3) {
+    reusableRgbData = new Uint8Array(256 * 240 * 3); // RGB 数据
+  }
+  const rgbData = reusableRgbData;
 
   for (let i = 0, j = 0; i < rgbaData.length; i += 4, j += 3) {
     rgbData[j] = rgbaData[i];     // R
@@ -988,3 +992,4 @@ Object.defineProperty(FilterSystem, 'multiBufferEnabled', {
 FilterSystem.renderWithMultiBuffering = renderWithMultiBuffering;
 
 window.FilterSystem = FilterSystem;
+

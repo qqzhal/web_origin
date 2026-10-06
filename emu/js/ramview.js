@@ -76,6 +76,9 @@ function drawMemView({
   highlight = null,
   scrollTop = 0
 }) {
+  // RAM 热图依赖 ramAccessType 访问记录：仅在面板可见时开启（面板关闭时会复位）。
+  // 面板关闭时的暂停刷新不置位，避免恢复运行后残留慢路径。
+  if (window.db && window.db._isDebugUIVisible && window.db._isDebugUIVisible()) window.db.trackAccess = true;
   const viewer = getCachedElement('memory-viewer');
   const output = getCachedElement('dtextoutput');
   const fakeHeightDiv = getCachedElement('memory-fake-height');
